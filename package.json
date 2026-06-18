@@ -1,0 +1,17 @@
+{
+  "name": "agrobarcelo-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo full-stack para AgroBarceló con React + Vite y Node.js + Express.",
+  "workspaces": [
+    "client",
+    "api"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:client": "npm run dev --workspace client",
+    "dev:api": "npm run dev --workspace api",
+    "build": "npm run build --workspace client",
+    "start:api": "npm run start --workspace api"
+  }
+}
