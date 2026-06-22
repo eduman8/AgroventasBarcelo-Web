@@ -137,9 +137,7 @@ function AdminAccessRequestsPage({ currentPath = '/admin/solicitudes-acceso' }) 
   }, [accessRequests, dateFilter, statusFilter, textFilter]);
 
   const selectedAccessRequest = useMemo(
-    () => filteredAccessRequests.find((accessRequest) => String(accessRequest.id) === String(selectedAccessRequestId))
-      ?? filteredAccessRequests[0]
-      ?? null,
+    () => filteredAccessRequests.find((accessRequest) => String(accessRequest.id) === String(selectedAccessRequestId)) ?? null,
     [filteredAccessRequests, selectedAccessRequestId]
   );
 
@@ -184,7 +182,18 @@ function AdminAccessRequestsPage({ currentPath = '/admin/solicitudes-acceso' }) 
             <h3>{selectedAccessRequest.nombre}</h3>
             <p>{selectedAccessRequest.empresa}</p>
           </div>
-          <span className={getStatusPillClassName(selectedAccessRequest.estado)}>{selectedAccessRequest.estado}</span>
+          <div className="admin-detail-header-actions">
+            <span className={getStatusPillClassName(selectedAccessRequest.estado)}>{selectedAccessRequest.estado}</span>
+            <button
+              className="admin-detail-close-button"
+              type="button"
+              onClick={() => setSelectedAccessRequestId(null)}
+              aria-label="Cerrar detalle de solicitud"
+              title="Cerrar detalle"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <dl className="admin-inquiry-detail__grid">
