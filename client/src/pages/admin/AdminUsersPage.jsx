@@ -118,9 +118,7 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
   }, [statusFilter, textFilter, users]);
 
   const selectedUser = useMemo(
-    () => filteredUsers.find((user) => String(user.id) === String(selectedUserId))
-      ?? filteredUsers[0]
-      ?? null,
+    () => filteredUsers.find((user) => String(user.id) === String(selectedUserId)) ?? null,
     [filteredUsers, selectedUserId]
   );
 
@@ -162,7 +160,18 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
             <h3>{selectedUser.nombre}</h3>
             <p>{selectedUser.email}</p>
           </div>
-          <span className={getStatusPillClassName(selectedUser.estado)}>{selectedUser.estado}</span>
+          <div className="admin-detail-header-actions">
+            <span className={getStatusPillClassName(selectedUser.estado)}>{selectedUser.estado}</span>
+            <button
+              className="admin-detail-close-button"
+              type="button"
+              onClick={() => setSelectedUserId(null)}
+              aria-label="Cerrar detalle de usuario"
+              title="Cerrar detalle"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <dl className="admin-inquiry-detail__grid">
