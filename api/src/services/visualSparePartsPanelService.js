@@ -56,10 +56,28 @@ END;
 `);
 };
 
-const panelQuery = `
+const getManualSparePartsPanelSchema = async (pool) => {
+  const result = await pool.request().query(`
+    SELECT COLUMN_NAME AS columnName
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = N'dbo'
+      AND TABLE_NAME = N'RepuestosManuales';
+  `);
+  const columnNames = new Set((result.recordset ?? []).map((column) => column.columnName));
+  const pickColumn = (candidates) => candidates.find((candidate) => columnNames.has(candidate)) ?? null;
+
+  return {
+    modelColumn: pickColumn(['Modelo', 'ModeloMaquina'])
+  };
+};
+
+const buildPanelQuery = ({ modelColumn }) => {
+  const modelSelect = modelColumn ? `rm.${modelColumn}` : 'NULL';
+
+  return `
 SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.ReferenciaDespiece AS referenciaDespiece,
   CAST(pv.XPercent AS FLOAT) AS xPercent, CAST(pv.YPercent AS FLOAT) AS yPercent, pv.Activo AS activo,
-  rm.Codigo AS codigo, rm.Descripcion AS descripcion, rm.Categoria AS categoria, rm.Marca AS marca, rm.ModeloMaquina AS modelo,
+  rm.Codigo AS codigo, rm.Descripcion AS descripcion, rm.Categoria AS categoria, rm.Marca AS marca, ${modelSelect} AS modelo,
   catalogo.ID_Articulo AS repuestoCatalogoId
 FROM dbo.RepuestosManualesPuntosVisuales pv
 OUTER APPLY (
@@ -76,6 +94,7 @@ OUTER APPLY (
 ) catalogo
 WHERE pv.Activo = 1 AND pv.ManualNombre = @manualNombre AND pv.Pagina = @pagina
 ORDER BY pv.ReferenciaDespiece, pv.Id;`;
+};
 
 const mapPoint = (point) => ({
   id: point.id,
@@ -99,7 +118,8 @@ export const getVisualSparePartsPanel = async ({ manualNombre, pagina }) => {
   const manual = normalizeManualName(manualNombre);
   const page = normalizePage(pagina);
   if (!manual || !page) return { manualNombre: manual, pagina: page, imageUrl: null, puntos: [] };
-  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).query(panelQuery);
+  const schema = await getManualSparePartsPanelSchema(pool);
+  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).query(buildPanelQuery(schema));
   const databaseImageUrl = await getManualImageUrl(pool, { manualNombre: manual, pagina: page });
   return { manualNombre: manual, pagina: page, imageUrl: databaseImageUrl || resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
 };
