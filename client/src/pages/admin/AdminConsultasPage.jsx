@@ -151,7 +151,7 @@ function AdminConsultasPage({ currentPath = '/admin/consultas' }) {
   }, [dateFilter, inquiries, statusFilter, textFilter]);
 
   const selectedInquiry = useMemo(
-    () => filteredInquiries.find((inquiry) => String(inquiry.id) === String(selectedInquiryId)) ?? filteredInquiries[0] ?? null,
+    () => filteredInquiries.find((inquiry) => String(inquiry.id) === String(selectedInquiryId)) ?? null,
     [filteredInquiries, selectedInquiryId]
   );
 
@@ -198,7 +198,18 @@ function AdminConsultasPage({ currentPath = '/admin/consultas' }) {
             <h3>{selectedInquiry.nombre}</h3>
             <p>{selectedInquiry.tipoConsulta}</p>
           </div>
-          <span className={getStatusPillClassName(selectedInquiry.estado)}>{selectedInquiry.estado}</span>
+          <div className="admin-detail-header-actions">
+            <span className={getStatusPillClassName(selectedInquiry.estado)}>{selectedInquiry.estado}</span>
+            <button
+              className="admin-detail-close-button"
+              type="button"
+              onClick={() => setSelectedInquiryId(null)}
+              aria-label="Cerrar detalle de consulta"
+              title="Cerrar detalle"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <dl className="admin-inquiry-detail__grid">

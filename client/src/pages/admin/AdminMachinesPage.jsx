@@ -336,9 +336,21 @@ function AdminMachinesPage({ currentPath = '/admin/maquinarias' }) {
 
       {isFormVisible && (
         <section className="admin-card admin-machine-form-card" aria-labelledby="admin-machine-form-title">
-          <div className="admin-section-heading">
-            <p className="eyebrow">Formulario</p>
-            <h2 id="admin-machine-form-title">{formTitle}</h2>
+          <div className="admin-section-heading admin-section-heading--with-close">
+            <div>
+              <p className="eyebrow">Formulario</p>
+              <h2 id="admin-machine-form-title">{formTitle}</h2>
+            </div>
+            <button
+              className="admin-detail-close-button"
+              type="button"
+              onClick={handleCancelForm}
+              aria-label="Cerrar formulario de maquinaria"
+              title="Cerrar formulario"
+              disabled={isSaving}
+            >
+              ×
+            </button>
           </div>
 
           <form className="admin-machine-form" onSubmit={handleSubmit} noValidate>

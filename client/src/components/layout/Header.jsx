@@ -16,24 +16,28 @@ function Header({ currentPath = '/' }) {
         </a>
 
         <nav className="main-nav" aria-label="Navegación principal">
-          {navigationItems.filter((item) => !item.authOnly || isAuthenticated).map((item) => (
-            <a
-              className={item.href === currentPath ? 'is-active' : undefined}
-              key={item.label}
-              href={item.href}
-            >
-              {item.label}
-            </a>
-          ))}
-          {isAuthenticated ? (
-            <button className="main-nav__button" type="button" onClick={handleLogout}>
-              Salir ({user?.nombre || user?.email})
-            </button>
-          ) : (
-            <a className={currentPath === '/login' ? 'is-active' : undefined} href="/login">
-              Ingresar
-            </a>
-          )}
+          <div className="main-nav__links">
+            {navigationItems.filter((item) => !item.authOnly || isAuthenticated).map((item) => (
+              <a
+                className={item.href === currentPath ? 'is-active' : undefined}
+                key={item.label}
+                href={item.href}
+              >
+                {item.label}
+              </a>
+            ))}
+          </div>
+          <div className="main-nav__account" aria-label="Cuenta">
+            {isAuthenticated ? (
+              <button className="main-nav__button" type="button" onClick={handleLogout}>
+                Salir ({user?.nombre || user?.email})
+              </button>
+            ) : (
+              <a className={currentPath === '/login' ? 'is-active' : undefined} href="/login">
+                Ingresar
+              </a>
+            )}
+          </div>
         </nav>
       </div>
     </header>
