@@ -5613,6 +5613,30 @@ h1 {
   cursor: crosshair;
 }
 
+.admin-visual-quick-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border: 1px solid rgba(33, 83, 45, 0.16);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  background: rgba(33, 83, 45, 0.1);
+  color: #21532d;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-visual-shortcuts {
+  align-self: center;
+  margin: 0;
+  color: #647067;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 @media (max-width: 860px) {
   .visual-panel__layout,
   .admin-visual-form {
