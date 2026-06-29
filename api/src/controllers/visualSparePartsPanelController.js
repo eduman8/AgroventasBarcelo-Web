@@ -2,7 +2,7 @@ import { createVisualPoint, deleteVisualPoint, getVisualSparePartsPanel, updateV
 
 const handleError = (response, error, message, status = 500) => {
   console.error('[visual-spare-parts-panel]', error);
-  response.status(status).json({ status: 'error', message });
+  response.status(error.statusCode || status).json({ status: 'error', message, duplicatePoint: error.duplicatePoint });
 };
 
 export const getVisualSparePartsPanelController = async (request, response) => {
