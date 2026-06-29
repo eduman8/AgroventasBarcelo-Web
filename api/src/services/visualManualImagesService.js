@@ -1,11 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { getSqlPool, sql } from '../config/sqlServer.js';
-
-const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,13 +76,43 @@ const assertPdf = async (filePath, mimetype, size) => {
   }
 };
 
-const listGeneratedPages = async (dir, prefix) => {
-  const files = await fs.readdir(dir);
-  return files
-    .map((file) => ({ file, match: file.match(new RegExp(`^${prefix}-(\\d+)\\.png$`)) }))
-    .filter((entry) => entry.match)
-    .map((entry) => ({ file: entry.file, page: Number.parseInt(entry.match[1], 10) }))
-    .sort((a, b) => a.page - b.page);
+const getPdfRenderScale = () => {
+  const dpi = Number.parseInt(process.env.MANUALES_VISUALES_PDF_DPI || '144', 10);
+  return Number.isFinite(dpi) && dpi > 0 ? dpi / 72 : 2;
+};
+
+const renderPdfPagesToPng = async ({ pdfPath, outputDir }) => {
+  const [{ getDocument, GlobalWorkerOptions }, { createCanvas }] = await Promise.all([
+    import('pdfjs-dist/legacy/build/pdf.mjs'),
+    import('@napi-rs/canvas')
+  ]);
+
+  GlobalWorkerOptions.workerSrc ||= null;
+
+  const data = new Uint8Array(await fs.readFile(pdfPath));
+  const document = await getDocument({ data, disableWorker: true }).promise;
+  const scale = getPdfRenderScale();
+  const pages = [];
+
+  try {
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const viewport = page.getViewport({ scale });
+      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+      const canvasContext = canvas.getContext('2d');
+
+      await page.render({ canvasContext, viewport }).promise;
+
+      const file = `pagina-${pageNumber}.png`;
+      await fs.writeFile(path.join(outputDir, file), canvas.toBuffer('image/png'));
+      pages.push({ file, page: pageNumber });
+      page.cleanup();
+    }
+  } finally {
+    await document.destroy();
+  }
+
+  return pages;
 };
 
 export const generateManualImagesFromPdf = async ({ manualNombre, file }) => {
@@ -107,15 +133,7 @@ export const generateManualImagesFromPdf = async ({ manualNombre, file }) => {
   await fs.copyFile(file.path, pdfTarget);
 
   try {
-    await execFileAsync(process.env.PDFTOPPM_BIN || 'pdftoppm', [
-      '-png',
-      '-r',
-      process.env.MANUALES_VISUALES_PDF_DPI || '144',
-      file.path,
-      path.join(tempDir, 'pagina')
-    ], { maxBuffer: 1024 * 1024 * 10 });
-
-    const generated = await listGeneratedPages(tempDir, 'pagina');
+    const generated = await renderPdfPagesToPng({ pdfPath: file.path, outputDir: tempDir });
     if (!generated.length) throw new Error('No se generaron imágenes desde el PDF.');
 
     const pool = await getSqlPool();
