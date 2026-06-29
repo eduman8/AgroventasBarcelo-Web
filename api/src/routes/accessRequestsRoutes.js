@@ -6,11 +6,12 @@ import {
   updateAdminAccessRequestStatusController
 } from '../controllers/accessRequestsController.js';
 
-const router = Router();
+const publicAccessRequestsRoutes = Router();
+const adminAccessRequestsRoutes = Router();
 
-router.post('/solicitudes-acceso', createAccessRequestController);
-router.get('/admin/solicitudes-acceso', getAdminAccessRequestsController);
-router.get('/admin/solicitudes-acceso/:id', getAdminAccessRequestDetailController);
-router.patch('/admin/solicitudes-acceso/:id/estado', updateAdminAccessRequestStatusController);
+publicAccessRequestsRoutes.post('/solicitudes-acceso', createAccessRequestController);
+adminAccessRequestsRoutes.get('/solicitudes-acceso', getAdminAccessRequestsController);
+adminAccessRequestsRoutes.get('/solicitudes-acceso/:id', getAdminAccessRequestDetailController);
+adminAccessRequestsRoutes.patch('/solicitudes-acceso/:id/estado', updateAdminAccessRequestStatusController);
 
-export default router;
+export { adminAccessRequestsRoutes, publicAccessRequestsRoutes };
