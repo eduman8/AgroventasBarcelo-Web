@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import { apiUrl } from '../../services/sparePartsService.js';
 import { createAdminVisualPoint, deleteAdminVisualPoint, getAdminVisualPoints, updateAdminVisualPoint, uploadVisualManualPdf } from '../../services/manualSparePartsSearchService.js';
@@ -7,6 +7,8 @@ const manualOptions = [
   { label: 'Repuestos Rastras', value: 'Repuestos Rastras' },
   { label: 'Grano Fino 2019', value: 'Grano Fino 2019' }
 ];
+
+const normalizeDuplicateValue = (value) => String(value ?? '').trim().toUpperCase();
 
 function AdminVisualSparePartsPage({ currentPath }) {
   const [manualNombre, setManualNombre] = useState(manualOptions[0].value);
@@ -19,8 +21,10 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [pdfFile, setPdfFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [generatedPages, setGeneratedPages] = useState([]);
+  const [lastCreatedPointId, setLastCreatedPointId] = useState(null);
+  const referenceInputRef = useRef(null);
 
-  const loadPanel = async () => {
+  const loadPanel = useCallback(async () => {
     if (!manualNombre || !pagina) return;
     setStatus('Cargando puntos...');
     try {
@@ -29,9 +33,13 @@ function AdminVisualSparePartsPage({ currentPath }) {
     } catch (error) {
       setStatus(error.message || 'No se pudieron cargar los puntos.');
     }
-  };
+  }, [manualNombre, pagina]);
 
-  useEffect(() => { loadPanel(); }, []);
+  useEffect(() => { loadPanel(); }, [loadPanel]);
+
+  const focusReferenceInput = () => {
+    window.requestAnimationFrame(() => referenceInputRef.current?.focus());
+  };
 
   const handleImageClick = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -39,33 +47,87 @@ function AdminVisualSparePartsPage({ currentPath }) {
       xPercent: Number((((event.clientX - rect.left) / rect.width) * 100).toFixed(3)),
       yPercent: Number((((event.clientY - rect.top) / rect.height) * 100).toFixed(3))
     });
+    focusReferenceInput();
   };
 
-  const resetForm = () => { setReferenciaDespiece(''); setCoords(null); setEditingId(null); };
+  const resetForm = useCallback(() => { setReferenciaDespiece(''); setCoords(null); setEditingId(null); }, []);
+
+  const findDuplicatePoint = (reference) => (panel?.puntos || []).find((point) => (
+    point.id !== editingId
+    && normalizeDuplicateValue(point.manualNombre || manualNombre) === normalizeDuplicateValue(manualNombre)
+    && String(point.pagina || pagina) === String(pagina)
+    && normalizeDuplicateValue(point.referenciaDespiece) === normalizeDuplicateValue(reference)
+  ));
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!coords) { setStatus('Hacé clic sobre la imagen para capturar la posición.'); return; }
-    const payload = { manualNombre, pagina, referenciaDespiece, ...coords, activo: true };
+    const trimmedReference = referenciaDespiece.trim();
+    if (!trimmedReference) { setStatus('Ingresá la referencia de despiece.'); focusReferenceInput(); return; }
+
+    const duplicatePoint = findDuplicatePoint(trimmedReference);
+    if (!editingId && duplicatePoint) {
+      const shouldCreateDuplicate = window.confirm(`Ya existe un punto para ${manualNombre}, página ${pagina}, referencia ${trimmedReference}. ¿Querés crear otro punto igual de todos modos? También podés cancelar y editar el existente desde el listado.`);
+      if (!shouldCreateDuplicate) {
+        setStatus(`Referencia ${trimmedReference} ya existe. Cancelado para evitar duplicados.`);
+        return;
+      }
+    }
+
+    const payload = { manualNombre, pagina, referenciaDespiece: trimmedReference, ...coords, activo: true };
     try {
-      if (editingId) await updateAdminVisualPoint(editingId, payload);
-      else await createAdminVisualPoint(payload);
+      let savedPoint = null;
+      if (editingId) savedPoint = await updateAdminVisualPoint(editingId, payload);
+      else savedPoint = await createAdminVisualPoint(payload);
       resetForm();
       await loadPanel();
-      setStatus('Punto visual guardado.');
-    } catch (error) { setStatus(error.message || 'No se pudo guardar el punto visual.'); }
+      setLastCreatedPointId(editingId ? null : savedPoint?.id ?? null);
+      setStatus(editingId ? `Punto ${trimmedReference} actualizado` : `Punto ${trimmedReference} guardado`);
+      focusReferenceInput();
+    } catch (error) { setStatus(error.message || 'Error al guardar punto'); }
   };
 
   const handleEdit = (point) => {
     setEditingId(point.id);
     setReferenciaDespiece(point.referenciaDespiece);
     setCoords({ xPercent: point.xPercent, yPercent: point.yPercent });
+    setStatus(`Editando punto ${point.referenciaDespiece}. Enter actualiza, Escape cancela.`);
+    focusReferenceInput();
   };
 
   const handleDelete = async (id) => {
-    try { await deleteAdminVisualPoint(id); await loadPanel(); setStatus('Punto eliminado.'); }
+    try { await deleteAdminVisualPoint(id); await loadPanel(); setStatus('Punto eliminado.'); if (lastCreatedPointId === id) setLastCreatedPointId(null); }
     catch (error) { setStatus(error.message || 'No se pudo eliminar el punto.'); }
   };
+
+  const handleUndoLastPoint = useCallback(async () => {
+    if (!lastCreatedPointId) return;
+    try {
+      await deleteAdminVisualPoint(lastCreatedPointId);
+      setLastCreatedPointId(null);
+      resetForm();
+      await loadPanel();
+      setStatus('Último punto deshecho.');
+    } catch (error) {
+      setStatus(error.message || 'No se pudo deshacer el último punto.');
+    }
+  }, [lastCreatedPointId, loadPanel, resetForm]);
+
+  useEffect(() => {
+    const handleKeyboardShortcut = (event) => {
+      if (event.key === 'Escape') {
+        resetForm();
+        setStatus('Selección cancelada.');
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && lastCreatedPointId) {
+        event.preventDefault();
+        handleUndoLastPoint();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyboardShortcut);
+    return () => window.removeEventListener('keydown', handleKeyboardShortcut);
+  }, [handleUndoLastPoint, lastCreatedPointId, resetForm]);
 
   const handlePdfUpload = async (event) => {
     event.preventDefault();
@@ -91,6 +153,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
       <section className="admin-section">
         <div className="admin-section__header">
           <div><p className="admin-topbar__eyebrow">Repuestos</p><h1>Panel visual interactivo</h1></div>
+          <span className="admin-visual-quick-badge">Modo carga rápida activo</span>
         </div>
         <form className="admin-visual-form" onSubmit={handlePdfUpload}>
           <h2>Cargar imágenes desde PDF</h2>
@@ -108,15 +171,17 @@ function AdminVisualSparePartsPage({ currentPath }) {
           <label>Manual<select value={manualNombre} onChange={(event) => setManualNombre(event.target.value)}>{manualOptions.map((manual) => <option key={manual.value} value={manual.value}>{manual.label}</option>)}{manualNombre && !manualOptions.some((manual) => manual.value === manualNombre) ? <option value={manualNombre}>{manualNombre}</option> : null}</select></label>
           <label>Página<input type="number" min="1" value={pagina} onChange={(event) => setPagina(event.target.value)} /></label>
           <button type="button" className="button button--secondary" onClick={loadPanel}>Cargar imagen y puntos</button>
-          <label>Referencia despiece<input value={referenciaDespiece} onChange={(event) => setReferenciaDespiece(event.target.value)} placeholder="Ej.: 7" /></label>
+          <label>Referencia despiece<input ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => setReferenciaDespiece(event.target.value)} placeholder="Ej.: 7" /></label>
           <p>Posición: {coords ? `${coords.xPercent}% / ${coords.yPercent}%` : 'sin capturar'}</p>
           <button className="button" type="submit">{editingId ? 'Actualizar punto' : 'Guardar punto'}</button>
           {editingId ? <button className="button button--secondary" type="button" onClick={resetForm}>Cancelar edición</button> : null}
+          <button className="button button--secondary" type="button" onClick={handleUndoLastPoint} disabled={!lastCreatedPointId}>Deshacer último punto</button>
+          <p className="admin-visual-shortcuts">Click en imagen → número → Enter. Escape cancela. Ctrl+Z deshace el último punto nuevo.</p>
         </form>
         {status ? <p className="status-message">{status}</p> : null}
         <div className="visual-panel__image-wrap admin-visual-image" onClick={handleImageClick} role="button" tabIndex="0">
           {panel?.imageUrl ? <img src={`${apiUrl}${panel.imageUrl}`} alt={`Manual ${manualNombre} página ${pagina}`} /> : <p className="status-message manual-spare-parts-empty">No hay imagen cargada para esta página.</p>}
-          {(panel?.puntos || []).map((point) => <span key={point.id} className="visual-panel__marker" style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%` }}>{point.referenciaDespiece}</span>)}
+          {(panel?.puntos || []).map((point) => <span key={point.id} className={`visual-panel__marker${editingId === point.id ? ' visual-panel__marker--selected' : ''}`} style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%` }}>{point.referenciaDespiece}</span>)}
           {coords ? <span className="visual-panel__marker visual-panel__marker--draft" style={{ left: `${coords.xPercent}%`, top: `${coords.yPercent}%` }}>+</span> : null}
         </div>
         <div className="manual-spare-parts-table-wrapper">
