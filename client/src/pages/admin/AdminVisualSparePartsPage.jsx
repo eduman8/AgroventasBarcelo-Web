@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import { apiUrl } from '../../services/sparePartsService.js';
-import { createAdminVisualPoint, deleteAdminVisualPoint, getAdminVisualPoints, updateAdminVisualPoint } from '../../services/manualSparePartsSearchService.js';
+import { createAdminVisualPoint, deleteAdminVisualPoint, getAdminVisualPoints, updateAdminVisualPoint, uploadVisualManualPdf } from '../../services/manualSparePartsSearchService.js';
 
 const manualOptions = [
   { label: 'Repuestos Rastras', value: 'Repuestos Rastras' },
@@ -16,6 +16,9 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [panel, setPanel] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [status, setStatus] = useState('');
+  const [pdfFile, setPdfFile] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [generatedPages, setGeneratedPages] = useState([]);
 
   const loadPanel = async () => {
     if (!manualNombre || !pagina) return;
@@ -64,14 +67,45 @@ function AdminVisualSparePartsPage({ currentPath }) {
     catch (error) { setStatus(error.message || 'No se pudo eliminar el punto.'); }
   };
 
+  const handlePdfUpload = async (event) => {
+    event.preventDefault();
+    if (!manualNombre) { setUploadStatus('Ingresá el nombre del manual.'); return; }
+    if (!pdfFile) { setUploadStatus('Seleccioná un archivo PDF.'); return; }
+    setUploadStatus('Subiendo PDF...');
+    try {
+      setUploadStatus('Procesando páginas...');
+      const result = await uploadVisualManualPdf({ manualNombre, archivo: pdfFile });
+      setGeneratedPages(result.paginas || []);
+      setUploadStatus(`${result.paginasGeneradas || 0} páginas generadas.`);
+      if (result.paginas?.[0]) {
+        setPagina(String(result.paginas[0].pagina));
+        setPanel({ manualNombre, pagina: result.paginas[0].pagina, imageUrl: result.paginas[0].imageUrl, puntos: [] });
+      }
+    } catch (error) {
+      setUploadStatus(error.message || 'No se pudo procesar el PDF.');
+    }
+  };
+
   return (
     <AdminLayout currentPath={currentPath}>
       <section className="admin-section">
         <div className="admin-section__header">
           <div><p className="admin-topbar__eyebrow">Repuestos</p><h1>Panel visual interactivo</h1></div>
         </div>
+        <form className="admin-visual-form" onSubmit={handlePdfUpload}>
+          <h2>Cargar imágenes desde PDF</h2>
+          <label>ManualNombre<input value={manualNombre} onChange={(event) => setManualNombre(event.target.value)} placeholder="Ej.: Repuestos Rastras" /></label>
+          <label>Archivo PDF<input type="file" accept="application/pdf" onChange={(event) => setPdfFile(event.target.files?.[0] || null)} /></label>
+          <button className="button" type="submit">Generar imágenes</button>
+          {uploadStatus ? <p className="status-message">{uploadStatus}</p> : null}
+          {generatedPages.length ? (
+            <label>Página generada<select value={pagina} onChange={(event) => { setPagina(event.target.value); const selected = generatedPages.find((page) => String(page.pagina) === event.target.value); if (selected) setPanel({ manualNombre, pagina: selected.pagina, imageUrl: selected.imageUrl, puntos: [] }); }}>
+              {generatedPages.map((page) => <option key={page.pagina} value={page.pagina}>Página {page.pagina} - {page.imageUrl}</option>)}
+            </select></label>
+          ) : null}
+        </form>
         <form className="admin-visual-form" onSubmit={handleSubmit}>
-          <label>Manual<select value={manualNombre} onChange={(event) => setManualNombre(event.target.value)}>{manualOptions.map((manual) => <option key={manual.value} value={manual.value}>{manual.label}</option>)}</select></label>
+          <label>Manual<select value={manualNombre} onChange={(event) => setManualNombre(event.target.value)}>{manualOptions.map((manual) => <option key={manual.value} value={manual.value}>{manual.label}</option>)}{manualNombre && !manualOptions.some((manual) => manual.value === manualNombre) ? <option value={manualNombre}>{manualNombre}</option> : null}</select></label>
           <label>Página<input type="number" min="1" value={pagina} onChange={(event) => setPagina(event.target.value)} /></label>
           <button type="button" className="button button--secondary" onClick={loadPanel}>Cargar imagen y puntos</button>
           <label>Referencia despiece<input value={referenciaDespiece} onChange={(event) => setReferenciaDespiece(event.target.value)} placeholder="Ej.: 7" /></label>

@@ -118,3 +118,18 @@ export async function deleteAdminVisualPoint(id) {
   });
   if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo eliminar el punto visual.'));
 }
+
+
+export async function uploadVisualManualPdf({ manualNombre = '', archivo } = {}) {
+  const formData = new FormData();
+  formData.append('manualNombre', String(manualNombre).trim());
+  formData.append('archivo', archivo);
+
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/manuales/upload`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: formData
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudieron generar imágenes desde el PDF.'));
+  return response.json();
+}

@@ -49,6 +49,53 @@ BEGIN
 END;
 
 
+
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.tables t
+    INNER JOIN sys.schemas s
+        ON s.schema_id = t.schema_id
+    WHERE t.name = N'RepuestosManualesImagenes'
+      AND s.name = N'dbo'
+)
+BEGIN
+    CREATE TABLE dbo.RepuestosManualesImagenes (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        ManualNombre NVARCHAR(200) NOT NULL,
+        ManualSlug NVARCHAR(150) NOT NULL,
+        Pagina INT NOT NULL,
+        ImageUrl NVARCHAR(500) NOT NULL,
+        ArchivoOrigen NVARCHAR(500) NULL,
+        Activo BIT NOT NULL DEFAULT 1,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        UpdatedAt DATETIME2 NULL
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'UX_RepuestosManualesImagenes_ManualPagina'
+      AND object_id = OBJECT_ID(N'dbo.RepuestosManualesImagenes')
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_RepuestosManualesImagenes_ManualPagina
+    ON dbo.RepuestosManualesImagenes (ManualSlug, Pagina);
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_RepuestosManualesImagenes_Busqueda'
+      AND object_id = OBJECT_ID(N'dbo.RepuestosManualesImagenes')
+)
+BEGIN
+    CREATE INDEX IX_RepuestosManualesImagenes_Busqueda
+    ON dbo.RepuestosManualesImagenes (Activo, ManualNombre, Pagina)
+    INCLUDE (ImageUrl, ManualSlug);
+END;
+
 IF NOT EXISTS (
     SELECT 1
     FROM sys.tables t
