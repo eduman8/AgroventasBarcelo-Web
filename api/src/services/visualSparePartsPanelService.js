@@ -22,6 +22,36 @@ const normalizePercent = (value) => {
   return Math.min(Math.max(percent, 0), 100);
 };
 const getDisplayValue = (value, fallback = '') => (value === null || value === undefined || value === '' ? fallback : value);
+
+const buildNormalizedReferenceExpression = (valueExpression) => {
+  const trimmed = `UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(150), COALESCE(${valueExpression}, '')))))`;
+  const withoutPrefixes = [
+    ['NCHAR(186)', "''"],
+    ['NCHAR(176)', "''"],
+    ["'ELEMENTO'", "''"],
+    ["'ELEM.'", "''"],
+    ["'ELEM'", "''"],
+    ["'ITEM'", "''"],
+    ["'NRO.'", "''"],
+    ["'NRO'", "''"],
+    ["'NUMERO'", "''"],
+    ["'NÚMERO'", "''"],
+    ["'NO.'", "''"],
+    ["'NO'", "''"],
+    ["'N.'", "''"],
+    ["'N'", "''"],
+    ["'#'", "''"],
+    ["':'", "''"],
+    ["'.'", "''"],
+    ["'-'", "''"],
+    ["'_'", "''"],
+    ["'/'", "''"],
+    ["' '", "''"],
+    ['CHAR(9)', "''"]
+  ].reduce((expression, [search, replacement]) => `REPLACE(${expression}, ${search}, ${replacement})`, trimmed);
+
+  return `COALESCE(CONVERT(NVARCHAR(150), TRY_CONVERT(BIGINT, NULLIF(${withoutPrefixes}, ''))), NULLIF(${withoutPrefixes}, ''))`;
+};
 const slugify = slugifyManualName;
 
 const resolveImageUrl = (manualNombre, pagina) => {
@@ -73,6 +103,8 @@ const getManualSparePartsPanelSchema = async (pool) => {
 
 const buildPanelQuery = ({ modelColumn }) => {
   const modelSelect = modelColumn ? `rm.${modelColumn}` : 'NULL';
+  const manualReferenceNormalized = buildNormalizedReferenceExpression('rm.ReferenciaDespiece');
+  const pointReferenceNormalized = buildNormalizedReferenceExpression('pv.ReferenciaDespiece');
 
   return `
 SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.ReferenciaDespiece AS referenciaDespiece,
@@ -82,9 +114,11 @@ SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.Ref
 FROM dbo.RepuestosManualesPuntosVisuales pv
 OUTER APPLY (
   SELECT TOP (1) * FROM dbo.RepuestosManuales rm
-  WHERE rm.Activo = 1 AND rm.ManualNombre = pv.ManualNombre AND rm.Pagina = pv.Pagina
-    AND UPPER(LTRIM(RTRIM(COALESCE(rm.ReferenciaDespiece, '')))) = UPPER(LTRIM(RTRIM(pv.ReferenciaDespiece)))
-  ORDER BY rm.Codigo
+  WHERE rm.Activo = 1 AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = pv.Pagina
+    AND ${manualReferenceNormalized} = ${pointReferenceNormalized}
+  ORDER BY
+    CASE WHEN UPPER(LTRIM(RTRIM(COALESCE(rm.ReferenciaDespiece, '')))) = UPPER(LTRIM(RTRIM(pv.ReferenciaDespiece))) THEN 0 ELSE 1 END,
+    rm.Codigo
 ) rm
 OUTER APPLY (
   SELECT TOP (1) p.ID_Articulo FROM dbo.Productos p
