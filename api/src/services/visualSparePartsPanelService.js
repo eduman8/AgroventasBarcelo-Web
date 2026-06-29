@@ -135,7 +135,7 @@ OUTER APPLY (
   FROM (
     SELECT rm.*, ROW_NUMBER() OVER (ORDER BY rm.Id) AS inferredReferenciaDespiece
     FROM dbo.RepuestosManuales rm
-    WHERE rm.Activo = 1 AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = pv.Pagina
+    WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = pv.Pagina
   ) ordered
   WHERE directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
   ORDER BY ordered.Id
@@ -169,19 +169,32 @@ WHERE LTRIM(RTRIM(pv.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
   AND pv.Pagina = @pagina
 ORDER BY TRY_CONVERT(INT, pv.ReferenciaDespiece), pv.ReferenciaDespiece, pv.Id;
 
--- 2) Todas las filas de dbo.RepuestosManuales para Repuestos Rastras página 6, con ROW_NUMBER inferido.
+-- 2) Auditoría de filtros del fallback ROW_NUMBER().
+--    Esta consulta muestra cuántas filas quedan al aplicar cada filtro históricamente sospechoso.
+SELECT
+  COUNT(1) AS filasMismoManualYPagina,
+  SUM(CASE WHEN rm.Activo = 1 THEN 1 ELSE 0 END) AS filasActivas,
+  SUM(CASE WHEN NULLIF(LTRIM(RTRIM(rm.Categoria)), '') IS NOT NULL THEN 1 ELSE 0 END) AS filasConCategoria,
+  SUM(CASE WHEN NULLIF(LTRIM(RTRIM(rm.ReferenciaDespiece)), '') IS NOT NULL THEN 1 ELSE 0 END) AS filasConReferenciaDespiece,
+  SUM(CASE WHEN NULLIF(LTRIM(RTRIM(rm.Codigo)), '') IS NOT NULL THEN 1 ELSE 0 END) AS filasConCodigo
+FROM dbo.RepuestosManuales rm
+WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  AND rm.Pagina = @pagina;
+
+-- 3) Subconsulta exacta que genera ROW_NUMBER(), sin OUTER APPLY ni TOP(1).
+--    Importante: no filtra Activo/Categoria/ReferenciaDespiece/Codigo porque el fallback debe
+--    numerar todas las filas importadas de la página para conservar el orden visual del manual.
 WITH manualRows AS (
   SELECT rm.*, ROW_NUMBER() OVER (ORDER BY rm.Id) AS inferredReferenciaDespiece
   FROM dbo.RepuestosManuales rm
-  WHERE rm.Activo = 1
-    AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
     AND rm.Pagina = @pagina
 )
 SELECT inferredReferenciaDespiece, Id, ManualNombre, Pagina, ReferenciaDespiece, Codigo, Descripcion, Categoria, Marca, Activo
 FROM manualRows
 ORDER BY inferredReferenciaDespiece;
 
--- 3) Resultado del cruce final para referencias visuales 1 a 8.
+-- 4) Resultado del cruce final para referencias visuales 1 a 8.
 WITH puntos AS (
   SELECT pv.*
   FROM dbo.RepuestosManualesPuntosVisuales pv
@@ -219,8 +232,7 @@ OUTER APPLY (
   FROM (
     SELECT rm.*, ROW_NUMBER() OVER (ORDER BY rm.Id) AS inferredReferenciaDespiece
     FROM dbo.RepuestosManuales rm
-    WHERE rm.Activo = 1
-      AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
+    WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
       AND rm.Pagina = pv.Pagina
   ) ordered
   WHERE directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
