@@ -11,9 +11,36 @@ async function parseErrorMessage(response, fallbackMessage) {
   }
 }
 
+function decodeTokenPayload(token) {
+  const encodedPayload = String(token ?? '').split('.')[1];
+
+  if (!encodedPayload) return null;
+
+  try {
+    return JSON.parse(window.atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+}
+
+export function isSessionValid(session) {
+  if (!session?.token) return false;
+
+  const payload = decodeTokenPayload(session.token);
+
+  return Number(payload?.exp) > Math.floor(Date.now() / 1000);
+}
+
 export function getStoredSession() {
   try {
-    return JSON.parse(window.localStorage.getItem(sessionStorageKey));
+    const session = JSON.parse(window.localStorage.getItem(sessionStorageKey));
+
+    if (!isSessionValid(session)) {
+      clearStoredSession();
+      return null;
+    }
+
+    return session;
   } catch {
     return null;
   }

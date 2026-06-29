@@ -1,6 +1,9 @@
 import { getMachineById, machinesMock } from '../data/machinesMock.js';
 
+import { getJsonHeaders } from './apiClient.js';
+
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const isDevelopmentMode = import.meta.env.DEV;
 
 function withFallbackFlag(data) {
   const fallbackData = Array.isArray(data) ? [...data] : { ...data };
@@ -33,11 +36,8 @@ async function parseErrorMessage(response, fallbackMessage) {
 
 async function fetchJson(path, fallbackMessage, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {})
-    },
-    ...options
+    ...options,
+    headers: getJsonHeaders(options.headers)
   });
 
   if (response.status === 404) {
@@ -54,8 +54,12 @@ async function fetchJson(path, fallbackMessage, options = {}) {
 export async function getMachines() {
   try {
     return await fetchJson('/api/maquinarias', 'No se pudieron cargar las maquinarias.');
-  } catch {
-    return withFallbackFlag(machinesMock);
+  } catch (error) {
+    if (isDevelopmentMode) {
+      return withFallbackFlag(machinesMock);
+    }
+
+    throw error;
   }
 }
 
@@ -67,7 +71,11 @@ export async function getMachineByIdentifier(identifier) {
     );
 
     return machine;
-  } catch {
+  } catch (error) {
+    if (!isDevelopmentMode) {
+      throw error;
+    }
+
     const fallbackMachine = getFallbackMachineBySlug(identifier);
 
     return fallbackMachine ? withFallbackFlag(fallbackMachine) : null;
@@ -81,8 +89,12 @@ export async function getMachineBySlug(slug) {
 export async function getAdminMachines() {
   try {
     return await fetchJson('/api/admin/maquinarias', 'No se pudieron cargar las maquinarias del admin.');
-  } catch {
-    return withFallbackFlag(machinesMock);
+  } catch (error) {
+    if (isDevelopmentMode) {
+      return withFallbackFlag(machinesMock);
+    }
+
+    throw error;
   }
 }
 
@@ -130,7 +142,7 @@ export async function deleteMachine(id) {
 export async function uploadMachineImage(dataUrl) {
   const response = await fetch(`${apiUrl}/api/admin/maquinarias/imagenes`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getJsonHeaders(),
     body: JSON.stringify({ dataUrl })
   });
 

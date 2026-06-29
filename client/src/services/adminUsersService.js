@@ -1,3 +1,5 @@
+import { getJsonHeaders } from './apiClient.js';
+
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const validUserStatuses = ['Activo', 'Inactivo'];
@@ -14,11 +16,8 @@ async function parseErrorMessage(response, fallbackMessage) {
 
 async function fetchJson(path, fallbackMessage, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {})
-    },
-    ...options
+    ...options,
+    headers: getJsonHeaders(options.headers)
   });
 
   if (response.status === 404) {

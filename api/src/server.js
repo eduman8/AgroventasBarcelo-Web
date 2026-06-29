@@ -16,6 +16,8 @@ import machinesRoutes from './routes/machinesRoutes.js';
 import machineImagesRoutes from './routes/machineImagesRoutes.js';
 import manualSparePartsSearchRoutes from './routes/manualSparePartsSearchRoutes.js';
 import setupRoutes from './routes/setupRoutes.js';
+import { requireAdmin } from './middleware/requireAdmin.js';
+import { requireActiveUser, requireAuth } from './middleware/requireAuth.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import sparePartsRoutes from './routes/sparePartsRoutes.js';
 
@@ -31,6 +33,7 @@ app.use(express.json());
 app.use('/api', contactRoutes);
 app.use('/api', accessRequestsRoutes);
 app.use('/api', authRoutes);
+app.use('/api/admin', requireAuth, requireActiveUser, requireAdmin);
 app.use('/api', adminDashboardRoutes);
 app.use('/api', adminInquiriesRoutes);
 app.use('/api', dbHealthRoutes);

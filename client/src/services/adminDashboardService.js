@@ -1,3 +1,5 @@
+import { getJsonHeaders } from './apiClient.js';
+
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const emptyDashboard = {
@@ -31,9 +33,7 @@ async function parseErrorMessage(response, fallbackMessage) {
 
 export async function getAdminDashboard() {
   const response = await fetch(`${apiUrl}/api/admin/dashboard`, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
+    headers: getJsonHeaders()
   });
 
   if (!response.ok) {

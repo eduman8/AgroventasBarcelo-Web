@@ -1,4 +1,5 @@
 import Footer from './components/layout/Footer.jsx';
+import AdminRouteGuard from './components/admin/AdminRouteGuard.jsx';
 import Header from './components/layout/Header.jsx';
 import { useAppRoute } from './hooks/useAppRoute.js';
 
@@ -7,7 +8,11 @@ function App() {
   const isAdminRoute = currentPath === '/admin' || currentPath.startsWith('/admin/');
 
   if (isAdminRoute) {
-    return <Page currentPath={currentPath} routeParams={routeParams} />;
+    return (
+      <AdminRouteGuard>
+        <Page currentPath={currentPath} routeParams={routeParams} />
+      </AdminRouteGuard>
+    );
   }
 
   return (

@@ -1,4 +1,7 @@
+import { getJsonHeaders } from './apiClient.js';
+
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const isDevelopmentMode = import.meta.env.DEV;
 
 export const defaultSettings = {
   emailContacto: 'info@agrobarcelo.com.ar',
@@ -13,14 +16,17 @@ async function parseError(response, fallback) {
 }
 
 async function fetchSettings(path, options, fallback) {
-  const response = await fetch(`${apiUrl}${path}`, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const response = await fetch(`${apiUrl}${path}`, { ...options, headers: getJsonHeaders(options?.headers) });
   if (!response.ok) throw new Error(await parseError(response, fallback));
   return response.json();
 }
 
 export async function getSettings() {
   try { return await fetchSettings('/api/configuracion', {}, 'No se pudo cargar la configuración.'); }
-  catch { return defaultSettings; }
+  catch (error) {
+    if (isDevelopmentMode) return defaultSettings;
+    throw error;
+  }
 }
 
 export async function updateSettings(data) {

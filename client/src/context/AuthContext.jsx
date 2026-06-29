@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState } from 'react';
-import { clearStoredSession, getStoredSession, login, storeSession } from '../services/authService.js';
+import { clearStoredSession, getStoredSession, isSessionValid, login, storeSession } from '../services/authService.js';
 
 const AuthContext = createContext(null);
 
@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
       email: session.email,
       rol: session.rol
     } : null,
-    isAuthenticated: Boolean(session?.token),
+    isAuthenticated: isSessionValid(session),
     signIn,
     logout
   }), [session]);
