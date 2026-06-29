@@ -145,7 +145,7 @@ The platform follows specific client requirements:
 
 🚧 **Active Development**
 
-This project is currently under active development and is being built in collaboration with AgroVentas Barceló as a real-world business solution.
+This project is currently under active development.
 
 ---
 
