@@ -1,3 +1,5 @@
+import { getJsonHeaders } from './apiClient.js';
+
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 async function parseErrorMessage(response, fallbackMessage) {
@@ -13,9 +15,7 @@ async function parseErrorMessage(response, fallbackMessage) {
 export async function createAccessRequest(accessRequest) {
   const response = await fetch(`${apiUrl}/api/solicitudes-acceso`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: getJsonHeaders(),
     body: JSON.stringify(accessRequest)
   });
 
@@ -31,11 +31,8 @@ const validAccessRequestStatuses = ['Pendiente', 'Aprobado', 'Rechazado'];
 
 async function fetchJson(path, fallbackMessage, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {})
-    },
-    ...options
+    ...options,
+    headers: getJsonHeaders(options.headers)
   });
 
   if (response.status === 404) {

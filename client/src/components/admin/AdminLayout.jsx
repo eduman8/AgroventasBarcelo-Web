@@ -1,3 +1,5 @@
+import { useAuth } from '../../context/AuthContext.jsx';
+
 const adminNavItems = [
   { label: 'Dashboard', href: '/admin' },
   { label: 'Maquinarias', href: '/admin/maquinarias' },
@@ -8,6 +10,8 @@ const adminNavItems = [
 ];
 
 function AdminLayout({ children, currentPath = '/admin' }) {
+  const { user, logout } = useAuth();
+
   return (
     <section className="admin-shell">
       <aside className="admin-sidebar" aria-label="Navegación administrativa">
@@ -38,7 +42,10 @@ function AdminLayout({ children, currentPath = '/admin' }) {
             <p className="admin-topbar__eyebrow">Panel privado</p>
             <strong>Gestión AgroBarceló</strong>
           </div>
-          <span className="admin-topbar__status">Sin autenticación · Fase 1</span>
+          <div className="admin-topbar__session">
+            <span className="admin-topbar__status">Sesión admin · {user?.email}</span>
+            <button className="button button--secondary" type="button" onClick={logout}>Cerrar sesión</button>
+          </div>
         </header>
 
         <main className="admin-content">{children}</main>

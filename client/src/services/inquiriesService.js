@@ -1,4 +1,7 @@
+import { getJsonHeaders } from './apiClient.js';
+
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const isDevelopmentMode = import.meta.env.DEV;
 
 const fallbackInquiries = [
   {
@@ -52,11 +55,8 @@ async function parseErrorMessage(response, fallbackMessage) {
 
 async function fetchJson(path, fallbackMessage, options = {}) {
   const response = await fetch(`${apiUrl}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {})
-    },
-    ...options
+    ...options,
+    headers: getJsonHeaders(options.headers)
   });
 
   if (response.status === 404) {
@@ -77,8 +77,12 @@ export function getValidInquiryStatuses() {
 export async function getAdminInquiries() {
   try {
     return await fetchJson('/api/admin/consultas', 'No se pudieron cargar las consultas del admin.');
-  } catch {
-    return withFallbackFlag(fallbackInquiries);
+  } catch (error) {
+    if (isDevelopmentMode) {
+      return withFallbackFlag(fallbackInquiries);
+    }
+
+    throw error;
   }
 }
 
