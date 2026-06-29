@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSqlPool, sql } from '../config/sqlServer.js';
+import { ensureVisualManualImagesTable, getManualImageUrl, slugifyManualName } from './visualManualImagesService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +22,7 @@ const normalizePercent = (value) => {
   return Math.min(Math.max(percent, 0), 100);
 };
 const getDisplayValue = (value, fallback = '') => (value === null || value === undefined || value === '' ? fallback : value);
-const slugify = (value) => normalizeManualName(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const slugify = slugifyManualName;
 
 const resolveImageUrl = (manualNombre, pagina) => {
   const manualSlug = slugify(manualNombre);
@@ -32,6 +33,7 @@ const resolveImageUrl = (manualNombre, pagina) => {
 };
 
 export const ensureVisualPointsTable = async (pool) => {
+  await ensureVisualManualImagesTable(pool);
   await pool.request().query(`
 IF NOT EXISTS (SELECT 1 FROM sys.tables t INNER JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.name = N'RepuestosManualesPuntosVisuales' AND s.name = N'dbo')
 BEGIN
@@ -98,7 +100,8 @@ export const getVisualSparePartsPanel = async ({ manualNombre, pagina }) => {
   const page = normalizePage(pagina);
   if (!manual || !page) return { manualNombre: manual, pagina: page, imageUrl: null, puntos: [] };
   const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).query(panelQuery);
-  return { manualNombre: manual, pagina: page, imageUrl: resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
+  const databaseImageUrl = await getManualImageUrl(pool, { manualNombre: manual, pagina: page });
+  return { manualNombre: manual, pagina: page, imageUrl: databaseImageUrl || resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
 };
 
 export const createVisualPoint = async ({ manualNombre, pagina, referenciaDespiece, xPercent, yPercent, activo = true }) => {
