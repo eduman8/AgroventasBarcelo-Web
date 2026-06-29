@@ -12,6 +12,7 @@ import AdminDashboardPage from '../pages/admin/AdminDashboardPage.jsx';
 import AdminConsultasPage from '../pages/admin/AdminConsultasPage.jsx';
 import AdminMachinesPage from '../pages/admin/AdminMachinesPage.jsx';
 import AdminSettingsPage from '../pages/admin/AdminSettingsPage.jsx';
+import AdminVisualSparePartsPage from '../pages/admin/AdminVisualSparePartsPage.jsx';
 import AdminUsersPage from '../pages/admin/AdminUsersPage.jsx';
 import AdminAccessRequestsPage from '../pages/admin/AdminAccessRequestsPage.jsx';
 import AccessRequestPage from '../pages/AccessRequestPage.jsx';
@@ -25,6 +26,7 @@ export const routes = {
   '/admin/consultas': AdminConsultasPage,
   '/admin/solicitudes-acceso': AdminAccessRequestsPage,
   '/admin/configuracion': AdminSettingsPage,
+  '/admin/repuestos-visuales': AdminVisualSparePartsPage,
   '/repuestos': SparePartsPage,
   '/buscador-repuestos': ManualSparePartsSearchPage,
   '/buscador-visual-repuestos': VisualSparePartsSearchPage,

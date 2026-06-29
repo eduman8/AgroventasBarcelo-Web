@@ -1,4 +1,5 @@
 import { apiUrl } from './sparePartsService.js';
+import { getAuthHeaders } from './apiClient.js';
 
 const buildAuthHeaders = (token) => (token ? { Authorization: `Bearer ${token}` } : {});
 
@@ -62,4 +63,58 @@ export async function searchVisualSpareParts({ manual = '', pagina = '', element
   }
 
   return response.json();
+}
+
+export async function getVisualSparePartsPanel({ manualNombre = '', pagina = '', token = '' } = {}) {
+  const params = new URLSearchParams({
+    manualNombre: String(manualNombre).trim(),
+    pagina: String(pagina).trim()
+  });
+
+  const response = await fetch(`${apiUrl}/api/buscador-visual-repuestos/panel?${params.toString()}`, {
+    headers: buildAuthHeaders(token)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'No se pudo cargar el panel visual.'));
+  }
+
+  return response.json();
+}
+
+export async function getAdminVisualPoints({ manualNombre = '', pagina = '' } = {}) {
+  const params = new URLSearchParams({ manualNombre: String(manualNombre).trim(), pagina: String(pagina).trim() });
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/puntos?${params.toString()}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudieron cargar los puntos visuales.'));
+  return response.json();
+}
+
+export async function createAdminVisualPoint(point) {
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/puntos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(point)
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo guardar el punto visual.'));
+  return response.json();
+}
+
+export async function updateAdminVisualPoint(id, point) {
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/puntos/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(point)
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo actualizar el punto visual.'));
+  return response.json();
+}
+
+export async function deleteAdminVisualPoint(id) {
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/puntos/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo eliminar el punto visual.'));
 }

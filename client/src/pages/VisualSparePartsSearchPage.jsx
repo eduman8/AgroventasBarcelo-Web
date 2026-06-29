@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import CatalogAccessRequired from '../components/auth/CatalogAccessRequired.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiUrl } from '../services/sparePartsService.js';
-import { searchVisualSpareParts } from '../services/manualSparePartsSearchService.js';
+import { getVisualSparePartsPanel, searchVisualSpareParts } from '../services/manualSparePartsSearchService.js';
 import { addContactSelectedPart, getContactSelectedParts } from '../utils/contactSelectedParts.js';
 
 const manualOptions = [
@@ -72,11 +72,53 @@ function VisualSparePartsSearchPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectionNotice, setSelectionNotice] = useState('');
+  const [panelData, setPanelData] = useState(null);
+  const [panelLoading, setPanelLoading] = useState(false);
+  const [panelError, setPanelError] = useState('');
+  const [selectedPanelPoint, setSelectedPanelPoint] = useState(null);
   const [selectedPartIds, setSelectedPartIds] = useState(() =>
     getContactSelectedParts().map((sparePart) => String(sparePart.id))
   );
 
   const hasSubmittedSearch = Boolean(submittedSearch);
+  useEffect(() => {
+    const normalizedManual = manual.trim();
+    const normalizedPagina = pagina.trim();
+
+    if (!isAuthenticated || !normalizedManual || !normalizedPagina) {
+      setPanelData(null);
+      setSelectedPanelPoint(null);
+      return;
+    }
+
+    let isCurrentRequest = true;
+    setPanelLoading(true);
+    setPanelError('');
+
+    getVisualSparePartsPanel({ manualNombre: normalizedManual, pagina: normalizedPagina, token })
+      .then((panelResponse) => {
+        if (isCurrentRequest) {
+          setPanelData(panelResponse);
+          setSelectedPanelPoint(null);
+        }
+      })
+      .catch((panelLoadError) => {
+        if (isCurrentRequest) {
+          setPanelData(null);
+          setPanelError(panelLoadError?.message || 'No se pudo cargar el panel visual.');
+        }
+      })
+      .finally(() => {
+        if (isCurrentRequest) {
+          setPanelLoading(false);
+        }
+      });
+
+    return () => {
+      isCurrentRequest = false;
+    };
+  }, [isAuthenticated, manual, pagina, token]);
+
   const resultsSummary = useMemo(() => {
     if (!submittedSearch || isLoading || error) {
       return '';
@@ -107,6 +149,7 @@ function VisualSparePartsSearchPage() {
 
     setIsLoading(true);
     setError('');
+    setPanelError('');
 
     try {
       const response = await searchVisualSpareParts({
@@ -223,6 +266,67 @@ function VisualSparePartsSearchPage() {
         <p className="visual-spare-parts-help">
           Abrí el manual, buscá el número marcado en el despiece e ingresalo junto con la página.
         </p>
+      </section>
+
+
+      <section className="manual-spare-parts-panel visual-panel" aria-labelledby="visual-panel-title">
+        <div className="manual-spare-parts-panel__header">
+          <p className="eyebrow">Panel visual interactivo</p>
+          <h2 id="visual-panel-title">Puntos clickeables del despiece</h2>
+          <p>Seleccioná manual y página para ver la imagen cargada y sus referencias disponibles.</p>
+        </div>
+
+        {panelLoading ? <p className="status-message">Cargando panel visual...</p> : null}
+        {panelError ? <p className="status-message status-message--error">{panelError}</p> : null}
+        {!panelLoading && !panelError && !panelData ? (
+          <p className="status-message manual-spare-parts-empty">Buscá una página para cargar el panel visual interactivo.</p>
+        ) : null}
+        {!panelLoading && !panelError && panelData ? (
+          <div className="visual-panel__layout">
+            <div className="visual-panel__canvas">
+              {panelData.imageUrl ? (
+                <div className="visual-panel__image-wrap">
+                  <img src={`${apiUrl}${panelData.imageUrl}`} alt={`Despiece ${panelData.manualNombre} página ${panelData.pagina}`} />
+                  {(panelData.puntos || []).map((point) => (
+                    <button
+                      className="visual-panel__marker"
+                      type="button"
+                      key={point.id}
+                      style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%` }}
+                      onClick={() => setSelectedPanelPoint(point)}
+                      aria-label={`Ver referencia ${point.referenciaDespiece}`}
+                    >
+                      {point.referenciaDespiece}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="status-message manual-spare-parts-empty">No hay imagen cargada para esta página del manual.</p>
+              )}
+              {(panelData.puntos || []).length === 0 ? (
+                <p className="status-message manual-spare-parts-empty">Todavía no hay puntos visuales cargados para esta página. Podés usar la búsqueda por número de referencia.</p>
+              ) : null}
+            </div>
+            <aside className="visual-panel__detail" aria-live="polite">
+              {selectedPanelPoint ? (
+                <>
+                  <p className="eyebrow">Referencia {selectedPanelPoint.referenciaDespiece}</p>
+                  <h3>{getDisplayValue(selectedPanelPoint.descripcion)}</h3>
+                  <dl>
+                    <div><dt>Código</dt><dd>{getDisplayValue(selectedPanelPoint.codigo, 'Sin código')}</dd></div>
+                    <div><dt>Manual</dt><dd>{getDisplayValue(selectedPanelPoint.manualNombre)}</dd></div>
+                    <div><dt>Página</dt><dd>{getDisplayValue(selectedPanelPoint.pagina)}</dd></div>
+                    <div><dt>Categoría</dt><dd>{getDisplayValue(selectedPanelPoint.categoria)}</dd></div>
+                    <div><dt>Estado</dt><dd>{selectedPanelPoint.disponibleEnCatalogo ? 'Disponible en catálogo' : 'Solo manual'}</dd></div>
+                  </dl>
+                  <button className="spare-parts-table__add-button" type="button" onClick={() => handleAddResultToQuery({ ...selectedPanelPoint, existeEnCatalogo: selectedPanelPoint.disponibleEnCatalogo, catalogoId: selectedPanelPoint.repuestoCatalogoId })}>Agregar a consulta</button>
+                </>
+              ) : (
+                <p>Hacé clic en un marcador para ver el detalle del repuesto.</p>
+              )}
+            </aside>
+          </div>
+        ) : null}
       </section>
 
       <section className="manual-spare-parts-results" aria-labelledby="visual-spare-parts-results-title">

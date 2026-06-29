@@ -6,7 +6,8 @@ const adminNavItems = [
   { label: 'Usuarios', href: '/admin/usuarios' },
   { label: 'Consultas', href: '/admin/consultas' },
   { label: 'Solicitudes', href: '/admin/solicitudes-acceso' },
-  { label: 'Configuración', href: '/admin/configuracion' }
+  { label: 'Configuración', href: '/admin/configuracion' },
+  { label: 'Repuestos visuales', href: '/admin/repuestos-visuales' }
 ];
 
 function AdminLayout({ children, currentPath = '/admin' }) {

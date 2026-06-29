@@ -47,3 +47,37 @@ BEGIN
     CREATE INDEX IX_RepuestosManuales_Manual
     ON dbo.RepuestosManuales (ManualNombre, Pagina);
 END;
+
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.tables t
+    INNER JOIN sys.schemas s
+        ON s.schema_id = t.schema_id
+    WHERE t.name = N'RepuestosManualesPuntosVisuales'
+      AND s.name = N'dbo'
+)
+BEGIN
+    CREATE TABLE dbo.RepuestosManualesPuntosVisuales (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        ManualNombre NVARCHAR(200) NOT NULL,
+        Pagina INT NOT NULL,
+        ReferenciaDespiece NVARCHAR(150) NOT NULL,
+        XPercent DECIMAL(6,3) NOT NULL,
+        YPercent DECIMAL(6,3) NOT NULL,
+        Activo BIT NOT NULL DEFAULT 1,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        UpdatedAt DATETIME2 NULL
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_RepuestosManualesPuntosVisuales_ManualPagina'
+      AND object_id = OBJECT_ID(N'dbo.RepuestosManualesPuntosVisuales')
+)
+BEGIN
+    CREATE INDEX IX_RepuestosManualesPuntosVisuales_ManualPagina
+    ON dbo.RepuestosManualesPuntosVisuales (Activo, ManualNombre, Pagina, ReferenciaDespiece);
+END;
