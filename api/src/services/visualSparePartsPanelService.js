@@ -53,6 +53,10 @@ const buildNormalizedReferenceExpression = (valueExpression) => {
   return `COALESCE(CONVERT(NVARCHAR(150), TRY_CONVERT(BIGINT, NULLIF(${withoutPrefixes}, ''))), NULLIF(${withoutPrefixes}, ''))`;
 };
 const slugify = slugifyManualName;
+const isDevelopment = process.env.NODE_ENV !== 'production';
+const PANEL_DIAGNOSTIC_MANUAL = 'Repuestos Rastras';
+const PANEL_DIAGNOSTIC_PAGE = 6;
+
 
 const resolveImageUrl = (manualNombre, pagina) => {
   const manualSlug = slugify(manualNombre);
@@ -112,6 +116,9 @@ SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.Ref
   CAST(pv.XPercent AS FLOAT) AS xPercent, CAST(pv.YPercent AS FLOAT) AS yPercent, pv.Activo AS activo,
   matched.Codigo AS codigo, matched.Descripcion AS descripcion, matched.Categoria AS categoria, matched.Marca AS marca, ${modelSelect} AS modelo,
   CASE WHEN directMatch.Id IS NOT NULL THEN 'direct' WHEN inferredMatch.Id IS NOT NULL THEN 'inferredByPageOrder' ELSE 'none' END AS matchSource,
+  directMatch.Id AS directMatchId, inferredMatch.Id AS inferredMatchId,
+  inferredMatch.inferredReferenciaDespiece AS inferredRowNumber, inferredMatch.Codigo AS inferredCodigo,
+  inferredMatch.Descripcion AS inferredDescripcion, inferredMatch.Categoria AS inferredCategoria,
   catalogo.ID_Articulo AS repuestoCatalogoId
 FROM dbo.RepuestosManualesPuntosVisuales pv
 OUTER APPLY (
@@ -145,6 +152,101 @@ WHERE pv.Activo = 1 AND pv.ManualNombre = @manualNombre AND pv.Pagina = @pagina
 ORDER BY pv.ReferenciaDespiece, pv.Id;`;
 };
 
+
+const buildPanelDiagnosticSqlForSsms = ({ manualNombre = PANEL_DIAGNOSTIC_MANUAL, pagina = PANEL_DIAGNOSTIC_PAGE } = {}) => {
+  const directManualReferenceNormalized = buildNormalizedReferenceExpression('rm.ReferenciaDespiece');
+  const inferredReferenceNormalized = buildNormalizedReferenceExpression('CONVERT(NVARCHAR(150), ordered.inferredReferenciaDespiece)');
+  const pointReferenceNormalized = buildNormalizedReferenceExpression('pv.ReferenciaDespiece');
+  const escapedManualName = String(manualNombre).replaceAll("'", "''");
+
+  return `DECLARE @manualNombre NVARCHAR(200) = N'${escapedManualName}';
+DECLARE @pagina INT = ${Number.parseInt(pagina, 10) || PANEL_DIAGNOSTIC_PAGE};
+
+-- 1) Todos los puntos visuales de Repuestos Rastras página 6.
+SELECT pv.Id, pv.ManualNombre, pv.Pagina, pv.ReferenciaDespiece, pv.XPercent, pv.YPercent, pv.Activo, pv.CreatedAt, pv.UpdatedAt
+FROM dbo.RepuestosManualesPuntosVisuales pv
+WHERE LTRIM(RTRIM(pv.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  AND pv.Pagina = @pagina
+ORDER BY TRY_CONVERT(INT, pv.ReferenciaDespiece), pv.ReferenciaDespiece, pv.Id;
+
+-- 2) Todas las filas de dbo.RepuestosManuales para Repuestos Rastras página 6, con ROW_NUMBER inferido.
+WITH manualRows AS (
+  SELECT rm.*, ROW_NUMBER() OVER (ORDER BY rm.Id) AS inferredReferenciaDespiece
+  FROM dbo.RepuestosManuales rm
+  WHERE rm.Activo = 1
+    AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+    AND rm.Pagina = @pagina
+)
+SELECT inferredReferenciaDespiece, Id, ManualNombre, Pagina, ReferenciaDespiece, Codigo, Descripcion, Categoria, Marca, Activo
+FROM manualRows
+ORDER BY inferredReferenciaDespiece;
+
+-- 3) Resultado del cruce final para referencias visuales 1 a 8.
+WITH puntos AS (
+  SELECT pv.*
+  FROM dbo.RepuestosManualesPuntosVisuales pv
+  WHERE pv.Activo = 1
+    AND LTRIM(RTRIM(pv.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+    AND pv.Pagina = @pagina
+    AND TRY_CONVERT(INT, pv.ReferenciaDespiece) BETWEEN 1 AND 8
+)
+SELECT pv.ReferenciaDespiece AS referenciaVisual,
+  CASE WHEN directMatch.Id IS NULL THEN 0 ELSE 1 END AS matchDirectoEncontrado,
+  directMatch.Id AS directMatchId,
+  CASE WHEN inferredMatch.Id IS NULL THEN 0 ELSE 1 END AS matchInferidoEncontrado,
+  inferredMatch.inferredReferenciaDespiece AS rowNumberInferidoUsado,
+  inferredMatch.Id AS filaSqlInferidaId,
+  inferredMatch.Codigo AS codigoInferido,
+  inferredMatch.Descripcion AS descripcionInferida,
+  inferredMatch.Categoria AS categoriaInferida,
+  matched.Codigo AS codigo,
+  matched.Descripcion AS descripcion,
+  matched.Categoria AS categoria,
+  CASE WHEN directMatch.Id IS NOT NULL THEN 'direct' WHEN inferredMatch.Id IS NOT NULL THEN 'inferredByPageOrder' ELSE 'none' END AS matchSource
+FROM puntos pv
+OUTER APPLY (
+  SELECT TOP (1) rm.*
+  FROM dbo.RepuestosManuales rm
+  WHERE rm.Activo = 1
+    AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
+    AND rm.Pagina = pv.Pagina
+    AND ${directManualReferenceNormalized} = ${pointReferenceNormalized}
+    AND (NULLIF(LTRIM(RTRIM(rm.Codigo)), '') IS NOT NULL OR NULLIF(LTRIM(RTRIM(rm.Descripcion)), '') IS NOT NULL)
+  ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(COALESCE(rm.ReferenciaDespiece, '')))) = UPPER(LTRIM(RTRIM(pv.ReferenciaDespiece))) THEN 0 ELSE 1 END, rm.Id
+) directMatch
+OUTER APPLY (
+  SELECT TOP (1) ordered.*
+  FROM (
+    SELECT rm.*, ROW_NUMBER() OVER (ORDER BY rm.Id) AS inferredReferenciaDespiece
+    FROM dbo.RepuestosManuales rm
+    WHERE rm.Activo = 1
+      AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
+      AND rm.Pagina = pv.Pagina
+  ) ordered
+  WHERE directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
+  ORDER BY ordered.Id
+) inferredMatch
+OUTER APPLY (SELECT COALESCE(directMatch.Id, inferredMatch.Id) AS Id) selectedMatch
+LEFT JOIN dbo.RepuestosManuales matched ON matched.Id = selectedMatch.Id
+ORDER BY TRY_CONVERT(INT, pv.ReferenciaDespiece), pv.ReferenciaDespiece, pv.Id;`;
+};
+
+const logPanelDiagnostics = ({ manualNombre, pagina, rows }) => {
+  if (!isDevelopment || manualNombre !== PANEL_DIAGNOSTIC_MANUAL || pagina !== PANEL_DIAGNOSTIC_PAGE) return;
+
+  console.info('[visual-spare-parts-panel:diagnostic] SSMS query for Repuestos Rastras page 6:\n%s', buildPanelDiagnosticSqlForSsms());
+  console.table((rows ?? []).map((row) => ({
+    referenciaVisual: row.referenciaDespiece,
+    matchDirectoEncontrado: Boolean(row.directMatchId),
+    matchInferidoEncontrado: Boolean(row.inferredMatchId),
+    filaSqlInferidaUsada: row.inferredMatchId ? `ROW_NUMBER=${row.inferredRowNumber}; Id=${row.inferredMatchId}` : null,
+    codigo: row.codigo ?? null,
+    descripcion: row.descripcion ?? null,
+    categoria: row.categoria ?? null,
+    matchSource: row.matchSource || 'none'
+  })));
+};
+
 const mapPoint = (point) => ({
   id: point.id,
   referenciaDespiece: getDisplayValue(point.referenciaDespiece),
@@ -170,6 +272,7 @@ export const getVisualSparePartsPanel = async ({ manualNombre, pagina }) => {
   if (!manual || !page) return { manualNombre: manual, pagina: page, imageUrl: null, puntos: [] };
   const schema = await getManualSparePartsPanelSchema(pool);
   const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).query(buildPanelQuery(schema));
+  logPanelDiagnostics({ manualNombre: manual, pagina: page, rows: result.recordset ?? [] });
   const databaseImageUrl = await getManualImageUrl(pool, { manualNombre: manual, pagina: page });
   return { manualNombre: manual, pagina: page, imageUrl: databaseImageUrl || resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
 };
