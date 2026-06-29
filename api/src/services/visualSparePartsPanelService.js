@@ -118,6 +118,7 @@ OUTER APPLY (
   SELECT TOP (1) rm.* FROM dbo.RepuestosManuales rm
   WHERE rm.Activo = 1 AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = pv.Pagina
     AND ${directManualReferenceNormalized} = ${pointReferenceNormalized}
+    AND (NULLIF(LTRIM(RTRIM(rm.Codigo)), '') IS NOT NULL OR NULLIF(LTRIM(RTRIM(rm.Descripcion)), '') IS NOT NULL)
   ORDER BY
     CASE WHEN UPPER(LTRIM(RTRIM(COALESCE(rm.ReferenciaDespiece, '')))) = UPPER(LTRIM(RTRIM(pv.ReferenciaDespiece))) THEN 0 ELSE 1 END,
     rm.Id
