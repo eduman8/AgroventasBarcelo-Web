@@ -13,7 +13,7 @@ dotenv.config({
   path: path.resolve(__dirname, '../../../.env')
 });
 
-const PDFS_TO_IMPORT = [
+export const PDFS_TO_IMPORT = [
   {
     manualNombre: 'Repuestos Rastras',
     archivoOrigen: 'manual-repuestos-rastras.pdf'
@@ -30,6 +30,13 @@ const leadingElementNumberPattern = /^\s*(\d{1,4})(?:[.)-])?\s+/;
 const repeatedWhitespacePattern = /\s+/g;
 const objectPattern = /(\d+)\s+0\s+obj\s*([\s\S]*?)\s*endobj/g;
 const streamPattern = /stream\r?\n([\s\S]*?)\r?\nendstream/;
+const visualVerificationChecks = [
+  {
+    manualNombre: 'Repuestos Rastras',
+    pageNumber: 6,
+    codes: ['56-0603', '82-0008', 'C0921', 'C0920']
+  }
+];
 
 const categoryRules = [
   { category: 'Rodamiento', keywords: ['rodamiento', 'rodamientos', 'bolilla', 'bolillas', 'bolas', 'rodillo', 'rodillos'] },
@@ -383,7 +390,8 @@ const extractPdfPages = async (pdfPath) => {
     const lines = buildLinesFromItems(items);
 
     return {
-      pageNumber: detectPrintedPageNumber(lines, index + 1),
+      pageNumber: index + 1,
+      printedPageNumber: detectPrintedPageNumber(lines, index + 1),
       lines
     };
   });
@@ -434,7 +442,7 @@ const looksLikeUsefulDescription = (description) => {
   return true;
 };
 
-const detectSparePartsInLine = ({ line, pageNumber, manualNombre, archivoOrigen }) => {
+const detectSparePartsInLine = ({ line, pageNumber, printedPageNumber, manualNombre, archivoOrigen }) => {
   const results = [];
   const matches = [...line.matchAll(codePattern)];
 
@@ -455,6 +463,7 @@ const detectSparePartsInLine = ({ line, pageNumber, manualNombre, archivoOrigen 
       manualNombre,
       archivoOrigen,
       pagina: pageNumber,
+      paginaImpresa: printedPageNumber,
       codigo,
       descripcion,
       referenciaDespiece,
@@ -474,12 +483,13 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
       const detectedInLine = detectSparePartsInLine({
         line,
         pageNumber: page.pageNumber,
+        printedPageNumber: page.printedPageNumber,
         manualNombre,
         archivoOrigen
       });
 
       for (const sparePart of detectedInLine) {
-        const key = `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.pagina}|${sparePart.referenciaDespiece ?? ''}`;
+        const key = `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.pagina}|${sparePart.paginaImpresa ?? ''}|${sparePart.referenciaDespiece ?? ''}`;
 
         if (!seen.has(key)) {
           seen.add(key);
@@ -497,6 +507,7 @@ const insertSparePartIfMissing = async (pool, sparePart) => {
     .input('ManualNombre', sql.NVarChar(200), sparePart.manualNombre)
     .input('ArchivoOrigen', sql.NVarChar(500), sparePart.archivoOrigen)
     .input('Pagina', sql.Int, sparePart.pagina)
+    .input('PaginaImpresa', sql.Int, sparePart.paginaImpresa)
     .input('Codigo', sql.NVarChar(100), sparePart.codigo)
     .input('Descripcion', sql.NVarChar(500), sparePart.descripcion)
     .input('ReferenciaDespiece', sql.NVarChar(150), sparePart.referenciaDespiece)
@@ -507,11 +518,19 @@ IF EXISTS (
     FROM dbo.RepuestosManuales
     WHERE Codigo = @Codigo
       AND ManualNombre = @ManualNombre
-      AND Pagina = @Pagina
+      AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
       AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
 )
 BEGIN
     DECLARE @updatedCategory INT = 0;
+
+    UPDATE dbo.RepuestosManuales
+    SET Pagina = @Pagina,
+        PaginaImpresa = COALESCE(PaginaImpresa, @PaginaImpresa)
+    WHERE Codigo = @Codigo
+      AND ManualNombre = @ManualNombre
+      AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
+      AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '');
 
     IF NULLIF(LTRIM(RTRIM(@Categoria)), '') IS NOT NULL
     BEGIN
@@ -519,7 +538,7 @@ BEGIN
         SET Categoria = @Categoria
         WHERE Codigo = @Codigo
           AND ManualNombre = @ManualNombre
-          AND Pagina = @Pagina
+          AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
           AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
           AND (
             NULLIF(LTRIM(RTRIM(Categoria)), '') IS NULL
@@ -537,6 +556,7 @@ BEGIN
         ManualNombre,
         ArchivoOrigen,
         Pagina,
+        PaginaImpresa,
         Codigo,
         Descripcion,
         ReferenciaDespiece,
@@ -547,6 +567,7 @@ BEGIN
         @ManualNombre,
         @ArchivoOrigen,
         @Pagina,
+        @PaginaImpresa,
         @Codigo,
         @Descripcion,
         @ReferenciaDespiece,
@@ -567,13 +588,33 @@ END;
   };
 };
 
-const buildImportPreview = async ({ manualNombre, archivoOrigen }) => {
+export const buildImportPreview = async ({ manualNombre, archivoOrigen }) => {
   const pdfPath = path.join(pdfsDirectory, archivoOrigen);
   const pages = await extractPdfPages(pdfPath);
   const spareParts = detectSpareParts({ pages, manualNombre, archivoOrigen });
 
   return { pages, spareParts };
 };
+
+const buildVisualVerification = ({ manualNombre, spareParts }) => visualVerificationChecks
+  .filter((check) => check.manualNombre === manualNombre)
+  .map((check) => ({
+    ...check,
+    matches: check.codes.map((code) => {
+      const match = spareParts.find((sparePart) => (
+        sparePart.pagina === check.pageNumber
+        && sparePart.codigo.toUpperCase() === code.toUpperCase()
+      ));
+
+      return {
+        code,
+        found: Boolean(match),
+        pagina: match?.pagina ?? null,
+        paginaImpresa: match?.paginaImpresa ?? null,
+        referenciaDespiece: match?.referenciaDespiece ?? null
+      };
+    })
+  }));
 
 const previewPdfImport = async (pdfConfig) => {
   const { pages, spareParts } = await buildImportPreview(pdfConfig);
@@ -589,7 +630,8 @@ const previewPdfImport = async (pdfConfig) => {
     updatedExistingWithCategory: 0,
     uncategorized: spareParts.length - categorizedDetected,
     withReferenciaDespiece: spareParts.filter((sparePart) => sparePart.referenciaDespiece).length,
-    withoutReferenciaDespiece: spareParts.filter((sparePart) => !sparePart.referenciaDespiece).length
+    withoutReferenciaDespiece: spareParts.filter((sparePart) => !sparePart.referenciaDespiece).length,
+    visualVerification: buildVisualVerification({ manualNombre: pdfConfig.manualNombre, spareParts })
   };
 };
 
@@ -606,7 +648,8 @@ const importPdf = async ({ pool, manualNombre, archivoOrigen }) => {
     updatedExistingWithCategory: 0,
     uncategorized: spareParts.length - categorizedDetected,
     withReferenciaDespiece: spareParts.filter((sparePart) => sparePart.referenciaDespiece).length,
-    withoutReferenciaDespiece: spareParts.filter((sparePart) => !sparePart.referenciaDespiece).length
+    withoutReferenciaDespiece: spareParts.filter((sparePart) => !sparePart.referenciaDespiece).length,
+    visualVerification: buildVisualVerification({ manualNombre, spareParts })
   };
 
   for (const sparePart of spareParts) {
@@ -634,6 +677,14 @@ const printSummary = (summary) => {
   console.log(`  Registros omitidos por duplicados: ${summary.duplicated}`);
   console.log(`  Registros con ReferenciaDespiece detectada: ${summary.withReferenciaDespiece}`);
   console.log(`  Registros sin ReferenciaDespiece: ${summary.withoutReferenciaDespiece}`);
+
+  for (const check of summary.visualVerification ?? []) {
+    console.log(`  Verificación visual ${check.manualNombre} página interna ${check.pageNumber}:`);
+
+    for (const match of check.matches) {
+      console.log(`    ${match.found ? 'OK' : 'FALTA'} ${match.code} (Pagina=${match.pagina ?? '-'}, PaginaImpresa=${match.paginaImpresa ?? '-'}, Ref=${match.referenciaDespiece ?? '-'})`);
+    }
+  }
 };
 
 async function runImporter() {
@@ -684,7 +735,8 @@ async function runImporter() {
   console.log(`  Registros sin ReferenciaDespiece: ${totals.withoutReferenciaDespiece}`);
 }
 
-runImporter().catch((error) => {
+if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
+  runImporter().catch((error) => {
   const diagnosticError = error?.cause || error;
 
   console.error('No se pudo importar repuestos desde PDFs hacia dbo.RepuestosManuales.', {
@@ -693,5 +745,6 @@ runImporter().catch((error) => {
     originalErrorMessage: diagnosticError?.originalError?.message,
     originalErrorCode: diagnosticError?.originalError?.code
   });
-  process.exitCode = 1;
-});
+    process.exitCode = 1;
+  });
+}
