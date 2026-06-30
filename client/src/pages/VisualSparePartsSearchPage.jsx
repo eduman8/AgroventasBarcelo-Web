@@ -18,6 +18,12 @@ const manualOptions = [
   }
 ];
 
+const getVisualPointStatusLabel = (point) => {
+  if (point?.disponibleEnCatalogo) return '🟢 Disponible';
+  if (point?.matchSource === 'customManual') return '🟡 Solo Manual / Cargado manualmente';
+  return '🟡 Solo Manual';
+};
+
 const getDisplayValue = (value, fallback = 'Sin informar') => {
   if (value === null || value === undefined || value === '') {
     return fallback;
@@ -450,7 +456,8 @@ function VisualSparePartsSearchPage() {
                     <div><dt>Categoría</dt><dd>{getDisplayValue(selectedPanelPoint.categoria)}</dd></div>
                     <div><dt>Marca</dt><dd>{getDisplayValue(selectedPanelPoint.marca)}</dd></div>
                     <div><dt>Modelo</dt><dd>{getDisplayValue(selectedPanelPoint.modelo)}</dd></div>
-                    <div><dt>Estado</dt><dd><span className={`manual-catalog-match__badge ${selectedPanelPoint.disponibleEnCatalogo ? 'manual-catalog-match__badge--available' : 'manual-catalog-match__badge--manual-only'}`}>{selectedPanelPoint.disponibleEnCatalogo ? '🟢 Disponible' : '🟡 Solo Manual'}</span></dd></div>
+                    {selectedPanelPoint.matchSource === 'customManual' ? <div><dt>Observación</dt><dd>{getDisplayValue(selectedPanelPoint.observacion)}</dd></div> : null}
+                    <div><dt>Estado</dt><dd><span className={`manual-catalog-match__badge ${selectedPanelPoint.disponibleEnCatalogo ? 'manual-catalog-match__badge--available' : 'manual-catalog-match__badge--manual-only'}`}>{getVisualPointStatusLabel(selectedPanelPoint)}</span></dd></div>
                   </dl>
                   <button className="spare-parts-table__add-button" type="button" onClick={() => handleAddResultToQuery({ ...selectedPanelPoint, existeEnCatalogo: selectedPanelPoint.disponibleEnCatalogo, catalogoId: selectedPanelPoint.repuestoCatalogoId })}>Agregar a consulta</button>
                 </>

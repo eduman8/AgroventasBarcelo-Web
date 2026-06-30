@@ -118,6 +118,12 @@ BEGIN
         Pagina INT NOT NULL,
         ReferenciaDespiece NVARCHAR(150) NOT NULL,
         RepuestoManualId INT NULL,
+        CodigoManual NVARCHAR(100) NULL,
+        DescripcionManual NVARCHAR(500) NULL,
+        CategoriaManual NVARCHAR(200) NULL,
+        MarcaManual NVARCHAR(200) NULL,
+        ModeloManual NVARCHAR(200) NULL,
+        ObservacionManual NVARCHAR(1000) NULL,
         XPercent DECIMAL(6,3) NOT NULL,
         YPercent DECIMAL(6,3) NOT NULL,
         Activo BIT NOT NULL DEFAULT 1,
@@ -130,6 +136,36 @@ IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'RepuestoManualId') IS NU
 BEGIN
     ALTER TABLE dbo.RepuestosManualesPuntosVisuales
     ADD RepuestoManualId INT NULL;
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'CodigoManual') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD CodigoManual NVARCHAR(100) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'DescripcionManual') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD DescripcionManual NVARCHAR(500) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'CategoriaManual') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD CategoriaManual NVARCHAR(200) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'MarcaManual') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD MarcaManual NVARCHAR(200) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'ModeloManual') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD ModeloManual NVARCHAR(200) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'ObservacionManual') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD ObservacionManual NVARCHAR(1000) NULL;
 END;
 
 IF NOT EXISTS (
