@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import { apiUrl } from '../../services/sparePartsService.js';
-import { applyAdminVisualDataPageOffset, createAdminVisualPoint, deleteAdminVisualPoint, getAdminVisualPoints, saveAdminVisualDataPageConfig, updateAdminVisualPoint, uploadVisualManualPdf } from '../../services/manualSparePartsSearchService.js';
+import { applyAdminVisualDataPageOffset, createAdminVisualPoint, deleteAdminVisualPoint, getAdminVisualPoints, saveAdminVisualDataPageConfig, searchAdminVisualManualSpareParts, updateAdminVisualPoint, uploadVisualManualPdf } from '../../services/manualSparePartsSearchService.js';
 
 const manualOptions = [
   { label: 'Repuestos Rastras', value: 'Repuestos Rastras' },
@@ -35,6 +35,10 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [dataPageMode, setDataPageMode] = useState('same');
   const [customDataPage, setCustomDataPage] = useState('');
   const [dataPageStatus, setDataPageStatus] = useState('');
+  const [manualLinkSearch, setManualLinkSearch] = useState('');
+  const [manualLinkResults, setManualLinkResults] = useState([]);
+  const [selectedManualLink, setSelectedManualLink] = useState(null);
+  const [manualLinkStatus, setManualLinkStatus] = useState('');
   const referenceInputRef = useRef(null);
   const imageWrapRef = useRef(null);
 
@@ -64,12 +68,19 @@ function AdminVisualSparePartsPage({ currentPath }) {
     setEditingId(null);
     setMoveMode(false);
     setDraggingId(null);
+    setSelectedManualLink(null);
+    setManualLinkSearch('');
+    setManualLinkResults([]);
+    setManualLinkStatus('');
   }, []);
 
   const selectPoint = useCallback((point, message = '') => {
     setEditingId(point.id);
     setReferenciaDespiece(point.referenciaDespiece || '');
     setCoords({ xPercent: point.xPercent, yPercent: point.yPercent });
+    setSelectedManualLink(point.repuestoManualId ? { id: point.repuestoManualId, codigo: point.codigo, descripcion: point.descripcion, referenciaDespiece: point.referenciaDespiece, categoria: point.categoria, marca: point.marca, modelo: point.modelo } : null);
+    setManualLinkSearch('');
+    setManualLinkResults([]);
     setStatus(message || `Punto ${point.referenciaDespiece} seleccionado. Podés editar referencia, moverlo o eliminarlo.`);
     focusReferenceInput();
   }, []);
@@ -117,7 +128,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
       return;
     }
 
-    const payload = { manualNombre, pagina, referenciaDespiece: trimmedReference, ...coords, activo: true };
+    const payload = { manualNombre, pagina, referenciaDespiece: trimmedReference, repuestoManualId: selectedManualLink?.id ?? null, ...coords, activo: true };
     try {
       const savedPoint = editingId ? await updateAdminVisualPoint(editingId, payload) : await createAdminVisualPoint(payload);
       refreshPointInPanel(savedPoint);
@@ -151,7 +162,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
   }, [editingId, lastCreatedPointId, panel?.puntos, resetForm]);
 
   const persistMove = async (point, nextCoords) => {
-    const payload = { manualNombre, pagina, referenciaDespiece: point.referenciaDespiece, ...nextCoords, activo: true };
+    const payload = { manualNombre, pagina, referenciaDespiece: point.referenciaDespiece, repuestoManualId: point.repuestoManualId ?? null, ...nextCoords, activo: true };
     try {
       const savedPoint = await updateAdminVisualPoint(point.id, payload);
       refreshPointInPanel(savedPoint);
@@ -223,6 +234,19 @@ function AdminVisualSparePartsPage({ currentPath }) {
     } catch (error) { setDataPageStatus(error.message || 'No se pudo aplicar la configuración masiva.'); }
   };
 
+  const handleSearchManualLink = async () => {
+    const dataPage = panel?.paginaDatos || customDataPage || pagina;
+    if (!manualNombre || !dataPage) { setManualLinkStatus('Cargá manual y página de datos antes de buscar.'); return; }
+    setManualLinkStatus('Buscando repuestos de la página de datos...');
+    try {
+      const response = await searchAdminVisualManualSpareParts({ manualNombre, paginaDatos: dataPage, search: manualLinkSearch });
+      setManualLinkResults(response.data || []);
+      setManualLinkStatus((response.data || []).length ? `${(response.data || []).length} repuestos encontrados.` : 'No se encontraron repuestos en esa página.');
+    } catch (error) { setManualLinkStatus(error.message || 'No se pudieron buscar repuestos.'); }
+  };
+
+  const formatManualLink = (part) => [part.codigo || 'Sin código', part.descripcion || 'Sin descripción'].filter(Boolean).join(' · ');
+
   const handlePdfUpload = async (event) => {
     event.preventDefault();
     if (!manualNombre) { setUploadStatus('Ingresá el nombre del manual.'); return; }
@@ -259,6 +283,18 @@ function AdminVisualSparePartsPage({ currentPath }) {
           <label>Página<input type="number" min="1" value={pagina} onChange={(event) => setPagina(event.target.value)} /></label>
           <button type="button" className="button button--secondary" onClick={loadPanel}>Cargar imagen y puntos</button>
           <label>Referencia despiece<input ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => setReferenciaDespiece(event.target.value)} placeholder="Ej.: 7" /></label>
+
+          <fieldset className="admin-visual-link-section">
+            <legend>Vincular repuesto manual</legend>
+            <p className="admin-visual-shortcuts">Buscá por código o descripción entre los repuestos de la página de datos configurada ({panel?.paginaDatos || customDataPage || pagina || '-'}).</p>
+            {selectedManualLink ? (
+              <p className="admin-visual-selection">Vinculado: {formatManualLink(selectedManualLink)} <button type="button" onClick={() => setSelectedManualLink(null)}>Desvincular</button></p>
+            ) : <p className="admin-visual-selection">Sin vínculo manual. Se usará cruce directo o inferido.</p>}
+            <label>Buscar repuesto<input value={manualLinkSearch} onChange={(event) => setManualLinkSearch(event.target.value)} placeholder="Código o descripción" /></label>
+            <button className="button button--secondary" type="button" onClick={handleSearchManualLink}>Buscar en página de datos</button>
+            {manualLinkStatus ? <p className="status-message">{manualLinkStatus}</p> : null}
+            {manualLinkResults.length ? <div className="manual-spare-parts-table-wrapper"><table className="manual-spare-parts-table"><thead><tr><th>Código</th><th>Descripción</th><th>Ref.</th><th>Acción</th></tr></thead><tbody>{manualLinkResults.map((part) => <tr key={part.id}><td>{part.codigo || 'Sin código'}</td><td>{part.descripcion || 'Sin descripción'}</td><td>{part.referenciaDespiece || '-'}</td><td><button type="button" onClick={() => setSelectedManualLink(part)}>Seleccionar</button></td></tr>)}</tbody></table></div> : null}
+          </fieldset>
           <p className="admin-visual-selection">{editingId ? `Seleccionado: ${referenciaDespiece || 'sin referencia'} · X ${coords?.xPercent}% / Y ${coords?.yPercent}%` : `Posición: ${coords ? `${coords.xPercent}% / ${coords.yPercent}%` : 'sin capturar'}`}</p>
           <button className="button" type="submit">{editingId ? 'Guardar cambios' : 'Guardar punto'}</button>
           {editingId ? <button className="button button--secondary" type="button" onClick={() => setMoveMode((value) => !value)}>{moveMode ? 'Desactivar mover punto' : 'Mover punto'}</button> : null}
@@ -294,7 +330,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
           {coords && !editingId ? <span className="visual-panel__marker visual-panel__marker--draft" style={{ left: `${coords.xPercent}%`, top: `${coords.yPercent}%` }}>+</span> : null}
         </div>
         <div className="manual-spare-parts-table-wrapper">
-          <table className="manual-spare-parts-table"><thead><tr><th>Ref.</th><th>X%</th><th>Y%</th><th>Código</th><th>Descripción</th><th>Cruce</th><th>Acciones</th></tr></thead><tbody>{(panel?.puntos || []).map((point) => <tr key={point.id} className={editingId === point.id ? 'is-selected' : ''}><td>{point.referenciaDespiece}</td><td>{point.xPercent}</td><td>{point.yPercent}</td><td>{point.codigo}</td><td>{point.descripcion}</td><td>{point.matchSource || 'none'}</td><td><button type="button" onClick={() => selectPoint(point)}>Editar</button> <button type="button" onClick={() => handleDelete(point.id)}>Eliminar</button></td></tr>)}</tbody></table>
+          <table className="manual-spare-parts-table"><thead><tr><th>Ref.</th><th>X%</th><th>Y%</th><th>Código</th><th>Descripción</th><th>Cruce</th><th>Vínculo</th><th>Acciones</th></tr></thead><tbody>{(panel?.puntos || []).map((point) => <tr key={point.id} className={editingId === point.id ? 'is-selected' : ''}><td>{point.referenciaDespiece}</td><td>{point.xPercent}</td><td>{point.yPercent}</td><td>{point.codigo}</td><td>{point.descripcion}</td><td>{point.matchSource || 'none'}</td><td>{point.repuestoManualId ? `#${point.repuestoManualId}` : '-'}</td><td><button type="button" onClick={() => selectPoint(point)}>Editar</button> <button type="button" onClick={() => handleDelete(point.id)}>Eliminar</button></td></tr>)}</tbody></table>
         </div>
       </section>
     </AdminLayout>

@@ -1,4 +1,4 @@
-import { applyVisualDataPageOffset, createVisualPoint, deleteVisualPoint, getVisualDataPageConfig, getVisualSparePartsPanel, saveVisualDataPageConfig, updateVisualPoint } from '../services/visualSparePartsPanelService.js';
+import { applyVisualDataPageOffset, createVisualPoint, deleteVisualPoint, getVisualDataPageConfig, getVisualSparePartsPanel, saveVisualDataPageConfig, searchManualSparePartsForVisualPage, updateVisualPoint } from '../services/visualSparePartsPanelService.js';
 
 const handleError = (response, error, message, status = 500) => {
   console.error('[visual-spare-parts-panel]', error);
@@ -48,4 +48,10 @@ export const saveAdminVisualDataPageConfigController = async (request, response)
 export const applyAdminVisualDataPageOffsetController = async (request, response) => {
   try { response.json(await applyVisualDataPageOffset(request.body)); }
   catch (error) { handleError(response, error, error.message || 'No se pudo aplicar la configuración masiva.', 400); }
+};
+
+export const searchAdminVisualManualSparePartsController = async (request, response) => {
+  try {
+    response.json({ data: await searchManualSparePartsForVisualPage({ manualNombre: request.query.manualNombre, paginaDatos: request.query.paginaDatos, search: request.query.search }) });
+  } catch (error) { handleError(response, error, 'No se pudieron buscar repuestos manuales para vincular.'); }
 };

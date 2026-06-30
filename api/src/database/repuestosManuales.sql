@@ -117,12 +117,31 @@ BEGIN
         ManualNombre NVARCHAR(200) NOT NULL,
         Pagina INT NOT NULL,
         ReferenciaDespiece NVARCHAR(150) NOT NULL,
+        RepuestoManualId INT NULL,
         XPercent DECIMAL(6,3) NOT NULL,
         YPercent DECIMAL(6,3) NOT NULL,
         Activo BIT NOT NULL DEFAULT 1,
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         UpdatedAt DATETIME2 NULL
     );
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'RepuestoManualId') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales
+    ADD RepuestoManualId INT NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_RepuestosManualesPuntosVisuales_RepuestoManualId'
+      AND object_id = OBJECT_ID(N'dbo.RepuestosManualesPuntosVisuales')
+)
+BEGIN
+    CREATE INDEX IX_RepuestosManualesPuntosVisuales_RepuestoManualId
+    ON dbo.RepuestosManualesPuntosVisuales (RepuestoManualId)
+    WHERE RepuestoManualId IS NOT NULL;
 END;
 
 IF NOT EXISTS (
