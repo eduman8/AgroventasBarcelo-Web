@@ -2,7 +2,6 @@ import HomePage from '../pages/HomePage.jsx';
 import AboutPage from '../pages/AboutPage.jsx';
 import ContactPage from '../pages/ContactPage.jsx';
 import MachinesPage from '../pages/MachinesPage.jsx';
-import ManualSparePartsSearchPage from '../pages/ManualSparePartsSearchPage.jsx';
 import VisualSparePartsSearchPage from '../pages/VisualSparePartsSearchPage.jsx';
 import MachinesDetailPage from '../pages/MachinesDetailPage.jsx';
 import ServicesPage from '../pages/ServicesPage.jsx';
@@ -28,7 +27,7 @@ export const routes = {
   '/admin/configuracion': AdminSettingsPage,
   '/admin/repuestos-visuales': AdminVisualSparePartsPage,
   '/repuestos': SparePartsPage,
-  '/buscador-repuestos': ManualSparePartsSearchPage,
+  '/buscador-repuestos': VisualSparePartsSearchPage,
   '/buscador-visual-repuestos': VisualSparePartsSearchPage,
   '/repuestos/:id': SparePartDetailPage,
   '/maquinarias': MachinesPage,
