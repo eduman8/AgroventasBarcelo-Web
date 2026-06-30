@@ -1,11 +1,35 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
+function getRedirectTarget(isAdmin) {
+  const params = new URLSearchParams(window.location.search);
+  const redirect = params.get('redirect');
+
+  if (isAdmin && redirect?.startsWith('/admin')) {
+    return redirect;
+  }
+
+  return isAdmin ? '/admin' : '/';
+}
+
+function navigateTo(path) {
+  window.history.pushState({}, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function LoginPage() {
-  const { isAuthenticated, signIn, user } = useAuth();
+  const { isAdmin, isAuthenticated, signIn, user } = useAuth();
   const [formValues, setFormValues] = useState({ email: '', password: '' });
   const [formStatus, setFormStatus] = useState('idle');
   const [notice, setNotice] = useState('');
+  const redirectTarget = useMemo(() => getRedirectTarget(isAdmin), [isAdmin]);
+
+  useEffect(() => {
+    if (isAuthenticated && formStatus !== 'sending') {
+      navigateTo(redirectTarget);
+    }
+  }, [formStatus, isAuthenticated, redirectTarget]);
 
   function handleFieldChange(event) {
     const { name, value } = event.target;
@@ -18,9 +42,9 @@ function LoginPage() {
     setNotice('');
 
     try {
-      await signIn(formValues);
-      setFormStatus('success');
-      setNotice('Sesión iniciada correctamente.');
+      const nextSession = await signIn(formValues);
+      const target = getRedirectTarget(String(nextSession?.rol ?? '').trim().toLowerCase() === 'admin');
+      navigateTo(target);
     } catch (error) {
       setFormStatus('error');
       setNotice(error.message || 'No se pudo iniciar sesión.');
@@ -29,14 +53,16 @@ function LoginPage() {
 
   return (
     <section className="login-page" aria-labelledby="login-title">
-      <div className="login-card">
-        <p className="eyebrow">Acceso clientes</p>
-        <h1 id="login-title">Iniciar sesión</h1>
-        <p>Ingresá con el email y la contraseña registrados en tu solicitud aprobada.</p>
+      <div className="login-card login-card--compact">
+        <div className="login-card__header">
+          <p className="eyebrow">Acceso clientes</p>
+          <h1 id="login-title">Iniciar sesión</h1>
+          <p>Ingresá con el email y la contraseña registrados en tu solicitud aprobada.</p>
+        </div>
 
         {isAuthenticated ? (
           <p className="contact-form__notice contact-form__notice--success" aria-live="polite">
-            Sesión activa como {user?.nombre || user?.email}.
+            Redirigiendo sesión activa de {user?.nombre || user?.email}...
           </p>
         ) : null}
 
