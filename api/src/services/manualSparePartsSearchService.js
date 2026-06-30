@@ -56,6 +56,7 @@ const mapManualSparePart = (sparePart) => {
     manualNombre: manual,
     archivoOrigen: getDisplayValue(sparePart.archivoOrigen),
     pagina: sparePart.pagina,
+    paginaImpresa: sparePart.paginaImpresa ?? null,
     codigo: getDisplayValue(sparePart.codigo, 'Sin código'),
     descripcion: getDisplayValue(sparePart.descripcion, 'Sin descripción'),
     marca: getDisplayValue(sparePart.marca, 'Sin marca'),
@@ -91,11 +92,13 @@ const getManualSparePartsSchema = async (pool) => {
   return {
     idColumn: pickColumn(['Id', 'ID_RepuestoManual'], 'ID_RepuestoManual'),
     modelColumn: pickColumn(['Modelo', 'ModeloMaquina']),
-    importDateColumn: pickColumn(['FechaCreacion', 'FechaAlta'])
+    importDateColumn: pickColumn(['FechaCreacion', 'FechaAlta']),
+    printedPageColumn: pickColumn(['PaginaImpresa'])
   };
 };
 
-const buildManualSparePartsSearchQuery = ({ idColumn, modelColumn }) => {
+const buildManualSparePartsSearchQuery = ({ idColumn, modelColumn, printedPageColumn }) => {
+  const printedPageSelect = printedPageColumn ? `rm.${printedPageColumn}` : 'NULL';
   const modelSelect = modelColumn ? `rm.${modelColumn}` : 'NULL';
   const modelSearch = modelColumn ? `OR rm.${modelColumn} LIKE @searchTerm` : '';
 
@@ -105,6 +108,7 @@ SELECT TOP (@limit)
     rm.ManualNombre AS manual,
     rm.ArchivoOrigen AS archivoOrigen,
     rm.Pagina AS pagina,
+    ${printedPageSelect} AS paginaImpresa,
     rm.Codigo AS codigo,
     rm.Descripcion AS descripcion,
     rm.Marca AS marca,
@@ -149,7 +153,8 @@ ORDER BY
 `;
 };
 
-const buildVisualSparePartsSearchQuery = ({ idColumn, modelColumn }) => {
+const buildVisualSparePartsSearchQuery = ({ idColumn, modelColumn, printedPageColumn }) => {
+  const printedPageSelect = printedPageColumn ? `rm.${printedPageColumn}` : 'NULL';
   const modelSelect = modelColumn ? `rm.${modelColumn}` : 'NULL';
 
   return `
@@ -158,6 +163,7 @@ SELECT TOP (@limit)
     rm.ManualNombre AS manual,
     rm.ArchivoOrigen AS archivoOrigen,
     rm.Pagina AS pagina,
+    ${printedPageSelect} AS paginaImpresa,
     rm.Codigo AS codigo,
     rm.Descripcion AS descripcion,
     rm.Marca AS marca,

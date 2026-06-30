@@ -11,7 +11,8 @@
     "import:repuestos-manuales": "node src/db/importers/importRepuestosManualesFromPdf.js",
     "audit:catalog": "node src/db/audits/auditSparePartsCatalog.js",
     "audit:catalog-exact-duplicates": "node src/db/audits/auditExactSparePartDuplicates.js",
-    "repair:catalog-encoding": "node src/db/maintenance/repairCatalogEncoding.js"
+    "repair:catalog-encoding": "node src/db/maintenance/repairCatalogEncoding.js",
+    "migrate:repuestos-manuales-pages": "node src/db/migrations/20260630_unify_repuestos_manuales_pdf_pages.js"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",

@@ -12,6 +12,7 @@ BEGIN
         ManualNombre NVARCHAR(200) NOT NULL,
         ArchivoOrigen NVARCHAR(500) NULL,
         Pagina INT NULL,
+        PaginaImpresa INT NULL,
         Codigo NVARCHAR(100) NULL,
         Descripcion NVARCHAR(500) NOT NULL,
         Marca NVARCHAR(120) NULL,
@@ -25,6 +26,12 @@ BEGIN
     );
 END;
 
+IF COL_LENGTH(N'dbo.RepuestosManuales', N'PaginaImpresa') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManuales
+    ADD PaginaImpresa INT NULL;
+END;
+
 IF NOT EXISTS (
     SELECT 1
     FROM sys.indexes
@@ -34,7 +41,7 @@ IF NOT EXISTS (
 BEGIN
     CREATE INDEX IX_RepuestosManuales_Busqueda
     ON dbo.RepuestosManuales (Activo, Codigo, Descripcion)
-    INCLUDE (ManualNombre, Pagina, Marca, ModeloMaquina, Categoria, ReferenciaDespiece);
+    INCLUDE (ManualNombre, Pagina, PaginaImpresa, Marca, ModeloMaquina, Categoria, ReferenciaDespiece);
 END;
 
 IF NOT EXISTS (
