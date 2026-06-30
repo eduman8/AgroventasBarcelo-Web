@@ -1,4 +1,5 @@
 import { getSqlPool, sql } from '../config/sqlServer.js';
+import { buildRepuestosManualesModelSearch, buildRepuestosManualesModelSelect, getRepuestosManualesSchema } from './repuestosManualesSchemaService.js';
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 50;
@@ -79,28 +80,10 @@ const mapCountByLabel = ({ label, total }) => ({
   total: total ?? 0
 });
 
-const getManualSparePartsSchema = async (pool) => {
-  const result = await pool.request().query(`
-    SELECT COLUMN_NAME AS columnName
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = N'dbo'
-      AND TABLE_NAME = N'RepuestosManuales';
-  `);
-  const columnNames = new Set((result.recordset ?? []).map((column) => column.columnName));
-  const pickColumn = (candidates, fallback = null) => candidates.find((candidate) => columnNames.has(candidate)) ?? fallback;
-
-  return {
-    idColumn: pickColumn(['Id', 'ID_RepuestoManual'], 'ID_RepuestoManual'),
-    modelColumn: pickColumn(['Modelo', 'ModeloMaquina']),
-    importDateColumn: pickColumn(['FechaCreacion', 'FechaAlta']),
-    printedPageColumn: pickColumn(['PaginaImpresa'])
-  };
-};
-
 const buildManualSparePartsSearchQuery = ({ idColumn, modelColumn, printedPageColumn }) => {
   const printedPageSelect = printedPageColumn ? `rm.${printedPageColumn}` : 'NULL';
-  const modelSelect = modelColumn ? `rm.${modelColumn}` : 'NULL';
-  const modelSearch = modelColumn ? `OR rm.${modelColumn} LIKE @searchTerm` : '';
+  const modelSelect = buildRepuestosManualesModelSelect({ modelColumn, tableAlias: 'rm', alias: 'modelo' });
+  const modelSearch = buildRepuestosManualesModelSearch({ modelColumn, tableAlias: 'rm', parameterName: 'searchTerm' });
 
   return `
 SELECT TOP (@limit)
@@ -112,7 +95,7 @@ SELECT TOP (@limit)
     rm.Codigo AS codigo,
     rm.Descripcion AS descripcion,
     rm.Marca AS marca,
-    ${modelSelect} AS modelo,
+    ${modelSelect},
     rm.Categoria AS categoria,
     rm.ReferenciaDespiece AS referenciaDespiece,
     rm.Observaciones AS observaciones,
@@ -155,7 +138,7 @@ ORDER BY
 
 const buildVisualSparePartsSearchQuery = ({ idColumn, modelColumn, printedPageColumn }) => {
   const printedPageSelect = printedPageColumn ? `rm.${printedPageColumn}` : 'NULL';
-  const modelSelect = modelColumn ? `rm.${modelColumn}` : 'NULL';
+  const modelSelect = buildRepuestosManualesModelSelect({ modelColumn, tableAlias: 'rm', alias: 'modelo' });
 
   return `
 SELECT TOP (@limit)
@@ -167,7 +150,7 @@ SELECT TOP (@limit)
     rm.Codigo AS codigo,
     rm.Descripcion AS descripcion,
     rm.Marca AS marca,
-    ${modelSelect} AS modelo,
+    ${modelSelect},
     rm.Categoria AS categoria,
     rm.ReferenciaDespiece AS referenciaDespiece,
     rm.Observaciones AS observaciones,
@@ -259,7 +242,7 @@ ORDER BY total DESC, label ASC;
 export const searchManualSpareParts = async (options = {}) => {
   const pool = await getSqlPool();
   const searchOptions = normalizeSearchOptions(options);
-  const schema = await getManualSparePartsSchema(pool);
+  const schema = await getRepuestosManualesSchema(pool);
   const result = await pool
     .request()
     .input('limit', sql.Int, searchOptions.limit)
@@ -292,7 +275,7 @@ export const searchVisualSpareParts = async (options = {}) => {
     };
   }
 
-  const schema = await getManualSparePartsSchema(pool);
+  const schema = await getRepuestosManualesSchema(pool);
   const result = await pool
     .request()
     .input('limit', sql.Int, searchOptions.limit)
@@ -315,7 +298,7 @@ export const searchVisualSpareParts = async (options = {}) => {
 
 export const getManualSparePartsDiagnostics = async () => {
   const pool = await getSqlPool();
-  const schema = await getManualSparePartsSchema(pool);
+  const schema = await getRepuestosManualesSchema(pool);
   const result = await pool
     .request()
     .input('topCategoriesLimit', sql.Int, TOP_CATEGORIES_LIMIT)

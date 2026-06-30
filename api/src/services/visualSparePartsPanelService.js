@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSqlPool, sql } from '../config/sqlServer.js';
+import { getRepuestosManualesSchema, buildRepuestosManualesModelSelect } from './repuestosManualesSchemaService.js';
 import { ensureVisualManualImagesTable, getManualImageUrl, slugifyManualName } from './visualManualImagesService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -122,23 +123,8 @@ END;
 `);
 };
 
-const getManualSparePartsPanelSchema = async (pool) => {
-  const result = await pool.request().query(`
-    SELECT COLUMN_NAME AS columnName
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = N'dbo'
-      AND TABLE_NAME = N'RepuestosManuales';
-  `);
-  const columnNames = new Set((result.recordset ?? []).map((column) => column.columnName));
-  const pickColumn = (candidates) => candidates.find((candidate) => columnNames.has(candidate)) ?? null;
-
-  return {
-    modelColumn: pickColumn(['Modelo', 'ModeloMaquina'])
-  };
-};
-
 const buildPanelQuery = ({ modelColumn }) => {
-  const modelSelect = modelColumn ? `matched.${modelColumn}` : 'NULL';
+  const modelSelect = buildRepuestosManualesModelSelect({ modelColumn, tableAlias: 'matched', alias: 'modelo' });
   const directManualReferenceNormalized = buildNormalizedReferenceExpression('rm.ReferenciaDespiece');
   const inferredReferenceNormalized = buildNormalizedReferenceExpression('CONVERT(NVARCHAR(150), ordered.inferredReferenciaDespiece)');
   const pointReferenceNormalized = buildNormalizedReferenceExpression('pv.ReferenciaDespiece');
@@ -146,7 +132,7 @@ const buildPanelQuery = ({ modelColumn }) => {
   return `
 SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.ReferenciaDespiece AS referenciaDespiece, pv.RepuestoManualId AS repuestoManualId,
   CAST(pv.XPercent AS FLOAT) AS xPercent, CAST(pv.YPercent AS FLOAT) AS yPercent, pv.Activo AS activo,
-  matched.Codigo AS codigo, matched.Descripcion AS descripcion, matched.Categoria AS categoria, matched.Marca AS marca, ${modelSelect} AS modelo,
+  matched.Codigo AS codigo, matched.Descripcion AS descripcion, matched.Categoria AS categoria, matched.Marca AS marca, ${modelSelect},
   CASE WHEN manualLink.Id IS NOT NULL THEN 'manualLink' WHEN directMatch.Id IS NOT NULL THEN 'direct' WHEN inferredMatch.Id IS NOT NULL THEN 'inferredByPageOrder' ELSE 'none' END AS matchSource,
   manualLink.Id AS manualLinkId, directMatch.Id AS directMatchId, inferredMatch.Id AS inferredMatchId,
   inferredMatch.inferredReferenciaDespiece AS inferredRowNumber, inferredMatch.Codigo AS inferredCodigo,
@@ -395,7 +381,7 @@ export const getVisualSparePartsPanel = async ({ manualNombre, pagina }) => {
   const manual = normalizeManualName(manualNombre);
   const page = normalizePage(pagina);
   if (!manual || !page) return { manualNombre: manual, pagina: page, imageUrl: null, puntos: [] };
-  const schema = await getManualSparePartsPanelSchema(pool);
+  const schema = await getRepuestosManualesSchema(pool);
   const dataPageConfig = await getVisualDataPageConfig({ manualNombre: manual, pagina: page });
   const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('paginaDatos', sql.Int, dataPageConfig.paginaDatos).query(buildPanelQuery(schema));
   logPanelDiagnostics({ manualNombre: manual, pagina: page, rows: result.recordset ?? [] });
@@ -473,25 +459,28 @@ export const searchManualSparePartsForVisualPage = async ({ manualNombre, pagina
   if (!manual || !dataPage) return [];
 
   const likeSearch = `%${normalizedSearch}%`;
+  const schema = await getRepuestosManualesSchema(pool);
+  const modelSelect = buildRepuestosManualesModelSelect({ modelColumn: schema.modelColumn, tableAlias: 'rm', alias: 'modelo' });
+  const printedPageSelect = schema.printedPageColumn ? `rm.${schema.printedPageColumn}` : 'NULL';
   const result = await pool.request()
     .input('manualNombre', sql.NVarChar(200), manual)
     .input('paginaDatos', sql.Int, dataPage)
     .input('search', sql.NVarChar(152), likeSearch)
     .query(`
-SELECT TOP (50) Id AS id, Pagina AS pagina, PaginaImpresa AS paginaImpresa, ReferenciaDespiece AS referenciaDespiece,
-  Codigo AS codigo, Descripcion AS descripcion, Categoria AS categoria, Marca AS marca, ModeloMaquina AS modelo
-FROM dbo.RepuestosManuales
-WHERE Activo = 1
-  AND LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@manualNombre))
-  AND Pagina = @paginaDatos
+SELECT TOP (50) rm.Id AS id, rm.Pagina AS pagina, ${printedPageSelect} AS paginaImpresa, rm.ReferenciaDespiece AS referenciaDespiece,
+  rm.Codigo AS codigo, rm.Descripcion AS descripcion, rm.Categoria AS categoria, rm.Marca AS marca, ${modelSelect}
+FROM dbo.RepuestosManuales rm
+WHERE rm.Activo = 1
+  AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  AND rm.Pagina = @paginaDatos
   AND (
     @search = N'%%'
-    OR Codigo LIKE @search
-    OR Descripcion LIKE @search
-    OR ReferenciaDespiece LIKE @search
-    OR Categoria LIKE @search
+    OR rm.Codigo LIKE @search
+    OR rm.Descripcion LIKE @search
+    OR rm.ReferenciaDespiece LIKE @search
+    OR rm.Categoria LIKE @search
   )
-ORDER BY Id;`);
+ORDER BY rm.Id;`);
   return result.recordset ?? [];
 };
 

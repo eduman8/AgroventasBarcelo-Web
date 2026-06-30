@@ -233,7 +233,7 @@ BEGIN
         Codigo NVARCHAR(100) NULL,
         Descripcion NVARCHAR(500) NOT NULL,
         Marca NVARCHAR(120) NULL,
-        ModeloMaquina NVARCHAR(180) NULL,
+        Modelo NVARCHAR(180) NULL,
         Categoria NVARCHAR(150) NULL,
         ReferenciaDespiece NVARCHAR(150) NULL,
         Observaciones NVARCHAR(MAX) NULL,
@@ -258,7 +258,7 @@ IF NOT EXISTS (
 BEGIN
     CREATE INDEX IX_RepuestosManuales_Busqueda
     ON dbo.RepuestosManuales (Activo, Codigo, Descripcion)
-    INCLUDE (ManualNombre, Pagina, PaginaImpresa, Marca, ModeloMaquina, Categoria, ReferenciaDespiece);
+    INCLUDE (ManualNombre, Pagina, PaginaImpresa, Marca, Categoria, ReferenciaDespiece);
 END;
 
 IF NOT EXISTS (
