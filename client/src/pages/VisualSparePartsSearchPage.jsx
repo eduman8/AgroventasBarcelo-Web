@@ -9,12 +9,14 @@ const manualOptions = [
   {
     label: 'Repuestos Rastras',
     value: 'Repuestos Rastras',
-    file: 'manual-repuestos-rastras.pdf'
+    file: 'manual-repuestos-rastras.pdf',
+    totalPages: 98
   },
   {
     label: 'Grano Fino 2019',
     value: 'Grano Fino 2019',
-    file: 'manual-repuestos-grano-fino-2019.pdf'
+    file: 'manual-repuestos-grano-fino-2019.pdf',
+    totalPages: 104
   }
 ];
 
@@ -71,7 +73,7 @@ const buildGeneralSearchUrl = (sparePart) => {
 function VisualSparePartsSearchPage() {
   const { isAuthenticated, token } = useAuth();
   const [manual, setManual] = useState(manualOptions[0].value);
-  const [pagina, setPagina] = useState('');
+  const [pagina, setPagina] = useState('1');
   const [elemento, setElemento] = useState('');
   const [submittedSearch, setSubmittedSearch] = useState(null);
   const [results, setResults] = useState([]);
@@ -153,11 +155,6 @@ function VisualSparePartsSearchPage() {
     );
   }, [panelData]);
 
-  const handleWheelZoom = useCallback((event) => {
-    event.preventDefault();
-    const direction = event.deltaY > 0 ? -0.18 : 0.18;
-    updateZoom((currentZoom) => currentZoom + direction, { x: event.clientX, y: event.clientY });
-  }, [updateZoom]);
 
   const handlePointerDown = useCallback((event) => {
     if (zoom <= 1 || event.target.closest('.visual-panel__marker')) return;
@@ -200,10 +197,16 @@ function VisualSparePartsSearchPage() {
     }
   }, [updateZoom]);
 
+  const selectedManualOption = manualOptions.find((manualOption) => manualOption.value === manual);
+  const totalPages = panelData?.totalPages ?? selectedManualOption?.totalPages ?? null;
+  const currentPageNumber = Number.parseInt(pagina, 10) || 1;
+  const isFirstPage = currentPageNumber <= 1;
+  const isLastPage = Boolean(totalPages && currentPageNumber >= totalPages);
+
   const hasSubmittedSearch = Boolean(submittedSearch);
   useEffect(() => {
     const normalizedManual = manual.trim();
-    const normalizedPagina = pagina.trim();
+    const normalizedPagina = String(pagina).trim();
 
     if (!isAuthenticated || !normalizedManual || !normalizedPagina) {
       setPanelData(null);
@@ -247,6 +250,35 @@ function VisualSparePartsSearchPage() {
 
     return `${results.length} coincidencias para ${submittedSearch.manual}, página ${submittedSearch.pagina}, elemento ${submittedSearch.elemento}.`;
   }, [error, isLoading, results.length, submittedSearch]);
+
+  const changePage = useCallback((nextPage) => {
+    const parsedPage = Number.parseInt(nextPage, 10);
+    if (!Number.isInteger(parsedPage)) return;
+    const clampedPage = Math.max(1, totalPages ? Math.min(parsedPage, totalPages) : parsedPage);
+    setPagina(String(clampedPage));
+    setSubmittedSearch(null);
+    setResults([]);
+    setError('');
+    setSelectionNotice('');
+  }, [totalPages]);
+
+  const handleManualChange = (event) => {
+    setManual(event.target.value);
+    setPagina('1');
+    setElemento('');
+    setSubmittedSearch(null);
+    setResults([]);
+    setError('');
+    setSelectionNotice('');
+    resetVisualView();
+  };
+
+  const handlePageInputChange = (event) => {
+    changePage(event.target.value);
+  };
+
+  const goToPreviousPage = () => changePage(currentPageNumber - 1);
+  const goToNextPage = () => changePage(currentPageNumber + 1);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -352,7 +384,7 @@ function VisualSparePartsSearchPage() {
             <select
               id="visual-spare-parts-manual"
               value={manual}
-              onChange={(event) => setManual(event.target.value)}
+              onChange={handleManualChange}
             >
               {manualOptions.map((manualOption) => (
                 <option key={manualOption.value} value={manualOption.value}>
@@ -370,7 +402,7 @@ function VisualSparePartsSearchPage() {
               min="1"
               inputMode="numeric"
               value={pagina}
-              onChange={(event) => setPagina(event.target.value)}
+              onChange={handlePageInputChange}
               placeholder="Ej.: 22"
             />
           </div>
@@ -389,8 +421,25 @@ function VisualSparePartsSearchPage() {
           <button type="submit" disabled={isLoading}>{isLoading ? 'Buscando...' : 'Buscar repuesto'}</button>
         </form>
 
+        <div className="visual-spare-parts-pagination" aria-label="Paginación del manual">
+          <button type="button" onClick={goToPreviousPage} disabled={panelLoading || isFirstPage}>Anterior</button>
+          <label htmlFor="visual-spare-parts-go-page">Ir a página
+            <input
+              id="visual-spare-parts-go-page"
+              type="number"
+              min="1"
+              max={totalPages || undefined}
+              inputMode="numeric"
+              value={pagina}
+              onChange={handlePageInputChange}
+            />
+          </label>
+          <button type="button" onClick={goToNextPage} disabled={panelLoading || isLastPage}>Siguiente</button>
+          <span>Página {currentPageNumber} {totalPages ? `de ${totalPages}` : '· total no disponible'}</span>
+        </div>
+
         <p className="visual-spare-parts-help">
-          Abrí el manual, buscá el número marcado en el despiece e ingresalo junto con la página.
+          Manual seleccionado: <strong>{selectedManualOption?.label || manual}</strong>. Página actual: <strong>{currentPageNumber}</strong>{totalPages ? <span> de <strong>{totalPages}</strong></span> : <span> (total no disponible)</span>}.
         </p>
       </section>
 
@@ -399,23 +448,23 @@ function VisualSparePartsSearchPage() {
         <div className="manual-spare-parts-panel__header">
           <p className="eyebrow">Panel visual interactivo</p>
           <h2 id="visual-panel-title">Puntos clickeables del despiece</h2>
-          <p>Seleccioná manual y página para ver la imagen cargada y sus referencias disponibles.</p>
+          <p>El manual seleccionado carga automáticamente desde la página 1. Usá Anterior, Siguiente o Ir a página para navegar.</p>
         </div>
 
         {panelLoading ? <p className="status-message">Cargando panel visual...</p> : null}
         {panelError ? <p className="status-message status-message--error">{panelError}</p> : null}
         {!panelLoading && !panelError && !panelData ? (
-          <p className="status-message manual-spare-parts-empty">Buscá una página para cargar el panel visual interactivo.</p>
+          <p className="status-message manual-spare-parts-empty">Seleccioná un manual para cargar automáticamente la página 1 del panel visual interactivo.</p>
         ) : null}
         {!panelLoading && !panelError && panelData ? (
           <div className="visual-panel__layout">
             <div className="visual-panel__canvas">
               {panelData.imageUrl ? (
-                <div className={`visual-panel__image-wrap${isDragging ? ' visual-panel__image-wrap--dragging' : ''}`} ref={viewportRef} onWheel={handleWheelZoom} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}>
+                <div className={`visual-panel__image-wrap${isDragging ? ' visual-panel__image-wrap--dragging' : ''}`} ref={viewportRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}>
                   <div className="visual-panel__toolbar" aria-label="Controles de zoom">
-                    <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom - 0.25)} aria-label="Alejar imagen">−</button>
+                    <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom - 0.25)} aria-label="Alejar imagen">Zoom −</button>
                     <span>{Math.round(zoom * 100)}%</span>
-                    <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom + 0.25)} aria-label="Acercar imagen">+</button>
+                    <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom + 0.25)} aria-label="Acercar imagen">Zoom +</button>
                     <button type="button" onClick={resetVisualView}>Restablecer</button>
                   </div>
                   <div className="visual-panel__image-stage" style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}>
@@ -486,7 +535,7 @@ function VisualSparePartsSearchPage() {
 
         {!hasSubmittedSearch && !isLoading ? (
           <p className="status-message manual-spare-parts-empty">
-            Seleccioná un manual, ingresá página y elemento, y presioná Buscar repuesto.
+            Seleccioná un marcador visual o ingresá un N.º de elemento y presioná Buscar repuesto.
           </p>
         ) : null}
 

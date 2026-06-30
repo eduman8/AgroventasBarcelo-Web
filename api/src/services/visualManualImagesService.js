@@ -63,6 +63,22 @@ ORDER BY UpdatedAt DESC, CreatedAt DESC;`);
   return result.recordset?.[0]?.imageUrl ?? null;
 };
 
+
+export const getManualImagesTotalPages = async (pool, { manualNombre }) => {
+  await ensureVisualManualImagesTable(pool);
+  const manual = normalizeManualName(manualNombre);
+  if (!manual) return null;
+  const result = await pool.request()
+    .input('manualNombre', sql.NVarChar(200), manual)
+    .input('manualSlug', sql.NVarChar(150), slugifyManualName(manual))
+    .query(`
+SELECT MAX(Pagina) AS totalPages
+FROM dbo.RepuestosManualesImagenes
+WHERE Activo = 1 AND (ManualNombre = @manualNombre OR ManualSlug = @manualSlug);`);
+  const totalPages = Number.parseInt(result.recordset?.[0]?.totalPages, 10);
+  return Number.isInteger(totalPages) && totalPages > 0 ? totalPages : null;
+};
+
 const assertPdf = async (filePath, mimetype, size) => {
   if (size > maxPdfBytes) throw new Error(`El PDF supera el máximo permitido de ${Math.round(maxPdfBytes / 1024 / 1024)} MB.`);
   if (mimetype && mimetype !== 'application/pdf') throw new Error('El archivo debe ser un PDF.');

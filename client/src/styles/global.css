@@ -6075,3 +6075,73 @@ h1 {
     width: 100%;
   }
 }
+
+.visual-spare-parts-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid rgba(201, 21, 28, 0.12);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(17, 17, 17, 0.06);
+}
+
+.visual-spare-parts-pagination label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-ink);
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.visual-spare-parts-pagination input {
+  width: 90px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #d8d8d8;
+  border-radius: 10px;
+  color: var(--color-ink);
+  font: inherit;
+  font-weight: 750;
+}
+
+.visual-spare-parts-pagination button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.visual-spare-parts-pagination button:disabled {
+  background: #d8d8d8;
+  color: var(--color-muted);
+  cursor: not-allowed;
+}
+
+.visual-spare-parts-pagination span {
+  color: var(--color-muted);
+  font-weight: 900;
+}
+
+@media (max-width: 700px) {
+  .visual-spare-parts-pagination,
+  .visual-spare-parts-pagination label,
+  .visual-spare-parts-pagination button,
+  .visual-spare-parts-pagination span {
+    width: 100%;
+  }
+
+  .visual-spare-parts-pagination button,
+  .visual-spare-parts-pagination label {
+    justify-content: center;
+  }
+}

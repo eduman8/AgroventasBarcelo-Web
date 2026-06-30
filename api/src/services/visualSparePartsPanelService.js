@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSqlPool, sql } from '../config/sqlServer.js';
 import { getRepuestosManualesSchema, buildRepuestosManualesModelSelect } from './repuestosManualesSchemaService.js';
-import { ensureVisualManualImagesTable, getManualImageUrl, slugifyManualName } from './visualManualImagesService.js';
+import { ensureVisualManualImagesTable, getManualImagesTotalPages, getManualImageUrl, slugifyManualName } from './visualManualImagesService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -439,8 +439,11 @@ export const getVisualSparePartsPanel = async ({ manualNombre, pagina }) => {
   const dataPageConfig = await getVisualDataPageConfig({ manualNombre: manual, pagina: page });
   const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('paginaDatos', sql.Int, dataPageConfig.paginaDatos).query(buildPanelQuery(schema));
   logPanelDiagnostics({ manualNombre: manual, pagina: page, rows: result.recordset ?? [] });
-  const databaseImageUrl = await getManualImageUrl(pool, { manualNombre: manual, pagina: page });
-  return { manualNombre: manual, pagina: page, paginaVisual: page, paginaDatos: dataPageConfig.paginaDatos, dataPageConfig, imageUrl: databaseImageUrl || resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
+  const [databaseImageUrl, totalPages] = await Promise.all([
+    getManualImageUrl(pool, { manualNombre: manual, pagina: page }),
+    getManualImagesTotalPages(pool, { manualNombre: manual })
+  ]);
+  return { manualNombre: manual, pagina: page, paginaVisual: page, paginaDatos: dataPageConfig.paginaDatos, dataPageConfig, totalPages, imageUrl: databaseImageUrl || resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
 };
 
 
