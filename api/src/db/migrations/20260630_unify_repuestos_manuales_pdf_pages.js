@@ -13,16 +13,39 @@ dotenv.config({
 
 const normalizeReference = (value) => String(value ?? '').trim();
 
+const repuestosManualesColumnExists = async (pool, columnName) => {
+  const result = await pool.request()
+    .input('ColumnName', sql.NVarChar(128), columnName)
+    .query(`
+SELECT 1 AS ExistsFlag
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = 'dbo'
+  AND TABLE_NAME = 'RepuestosManuales'
+  AND COLUMN_NAME = @ColumnName;
+`);
+
+  return result.recordset.length > 0;
+};
+
 const ensurePaginaImpresaColumn = async (pool) => {
+  if (await repuestosManualesColumnExists(pool, 'PaginaImpresa')) {
+    return;
+  }
+
   await pool.request().query(`
-IF COL_LENGTH(N'dbo.RepuestosManuales', N'PaginaImpresa') IS NULL
-BEGIN
-  ALTER TABLE dbo.RepuestosManuales ADD PaginaImpresa INT NULL;
-END;
+ALTER TABLE dbo.RepuestosManuales ADD PaginaImpresa INT NULL;
 `);
 };
 
-const repairSparePartPage = async (pool, sparePart) => {
+const getRepuestosManualesOptionalColumns = async (pool) => ({
+  fechaModificacion: await repuestosManualesColumnExists(pool, 'FechaModificacion')
+});
+
+const repairSparePartPage = async (pool, sparePart, optionalColumns) => {
+  const fechaModificacionUpdate = optionalColumns.fechaModificacion
+    ? ',\n    FechaModificacion = COALESCE(FechaModificacion, GETDATE())'
+    : '';
+
   const result = await pool.request()
     .input('ManualNombre', sql.NVarChar(200), sparePart.manualNombre)
     .input('Pagina', sql.Int, sparePart.pagina)
@@ -32,8 +55,7 @@ const repairSparePartPage = async (pool, sparePart) => {
     .query(`
 UPDATE dbo.RepuestosManuales
 SET Pagina = @Pagina,
-    PaginaImpresa = @PaginaImpresa,
-    FechaModificacion = COALESCE(FechaModificacion, GETDATE())
+    PaginaImpresa = @PaginaImpresa${fechaModificacionUpdate}
 WHERE LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@ManualNombre))
   AND UPPER(LTRIM(RTRIM(Codigo))) = UPPER(LTRIM(RTRIM(@Codigo)))
   AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
@@ -50,6 +72,7 @@ WHERE LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@ManualNombre))
 const runMigration = async () => {
   const pool = await getSqlPool();
   await ensurePaginaImpresaColumn(pool);
+  const optionalColumns = await getRepuestosManualesOptionalColumns(pool);
 
   let detected = 0;
   let updated = 0;
@@ -59,7 +82,7 @@ const runMigration = async () => {
     detected += spareParts.length;
 
     for (const sparePart of spareParts) {
-      updated += await repairSparePartPage(pool, sparePart);
+      updated += await repairSparePartPage(pool, sparePart, optionalColumns);
     }
   }
 
