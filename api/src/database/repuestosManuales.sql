@@ -135,3 +135,35 @@ BEGIN
     CREATE INDEX IX_RepuestosManualesPuntosVisuales_ManualPagina
     ON dbo.RepuestosManualesPuntosVisuales (Activo, ManualNombre, Pagina, ReferenciaDespiece);
 END;
+
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.tables t
+    INNER JOIN sys.schemas s
+        ON s.schema_id = t.schema_id
+    WHERE t.name = N'RepuestosManualesPaginasVisuales'
+      AND s.name = N'dbo'
+)
+BEGIN
+    CREATE TABLE dbo.RepuestosManualesPaginasVisuales (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        ManualNombre NVARCHAR(200) NOT NULL,
+        PaginaVisual INT NOT NULL,
+        PaginaDatos INT NOT NULL,
+        Activo BIT NOT NULL DEFAULT 1,
+        CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        UpdatedAt DATETIME2 NULL
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'UX_RepuestosManualesPaginasVisuales_ManualPaginaVisual'
+      AND object_id = OBJECT_ID(N'dbo.RepuestosManualesPaginasVisuales')
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_RepuestosManualesPaginasVisuales_ManualPaginaVisual
+    ON dbo.RepuestosManualesPaginasVisuales (ManualNombre, PaginaVisual);
+END;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import { apiUrl } from '../../services/sparePartsService.js';
-import { createAdminVisualPoint, deleteAdminVisualPoint, getAdminVisualPoints, updateAdminVisualPoint, uploadVisualManualPdf } from '../../services/manualSparePartsSearchService.js';
+import { applyAdminVisualDataPageOffset, createAdminVisualPoint, deleteAdminVisualPoint, getAdminVisualPoints, saveAdminVisualDataPageConfig, updateAdminVisualPoint, uploadVisualManualPdf } from '../../services/manualSparePartsSearchService.js';
 
 const manualOptions = [
   { label: 'Repuestos Rastras', value: 'Repuestos Rastras' },
@@ -32,6 +32,9 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [uploadStatus, setUploadStatus] = useState('');
   const [generatedPages, setGeneratedPages] = useState([]);
   const [lastCreatedPointId, setLastCreatedPointId] = useState(null);
+  const [dataPageMode, setDataPageMode] = useState('same');
+  const [customDataPage, setCustomDataPage] = useState('');
+  const [dataPageStatus, setDataPageStatus] = useState('');
   const referenceInputRef = useRef(null);
   const imageWrapRef = useRef(null);
 
@@ -41,7 +44,10 @@ function AdminVisualSparePartsPage({ currentPath }) {
     if (!manualNombre || !pagina) return;
     setStatus('Cargando puntos...');
     try {
-      setPanel(await getAdminVisualPoints({ manualNombre, pagina }));
+      const nextPanel = await getAdminVisualPoints({ manualNombre, pagina });
+      setPanel(nextPanel);
+      setDataPageMode(nextPanel.dataPageConfig?.mode || 'same');
+      setCustomDataPage(String(nextPanel.paginaDatos || pagina));
       setStatus('');
     } catch (error) {
       setStatus(error.message || 'No se pudieron cargar los puntos.');
@@ -92,7 +98,11 @@ function AdminVisualSparePartsPage({ currentPath }) {
   };
 
   const refreshPointDetails = async () => {
-    if (manualNombre && pagina) setPanel(await getAdminVisualPoints({ manualNombre, pagina }));
+    if (!manualNombre || !pagina) return;
+    const nextPanel = await getAdminVisualPoints({ manualNombre, pagina });
+    setPanel(nextPanel);
+    setDataPageMode(nextPanel.dataPageConfig?.mode || 'same');
+    setCustomDataPage(String(nextPanel.paginaDatos || pagina));
   };
 
   const handleSubmit = async (event) => {
@@ -191,6 +201,28 @@ function AdminVisualSparePartsPage({ currentPath }) {
     return () => window.removeEventListener('keydown', handleKeyboardShortcut);
   }, [editingId, handleDelete, handleUndoLastPoint, lastCreatedPointId, resetForm]);
 
+
+  const handleSaveDataPageConfig = async (event) => {
+    event.preventDefault();
+    if (!manualNombre || !pagina) { setDataPageStatus('Cargá manual y página visual.'); return; }
+    setDataPageStatus('Guardando página de datos...');
+    try {
+      const saved = await saveAdminVisualDataPageConfig({ manualNombre, paginaVisual: pagina, mode: dataPageMode, paginaDatos: customDataPage });
+      setDataPageStatus(`Página visual ${saved.paginaVisual} usa datos de página ${saved.paginaDatos}.`);
+      await loadPanel();
+    } catch (error) { setDataPageStatus(error.message || 'No se pudo guardar la página de datos.'); }
+  };
+
+  const handleApplyMassiveOffset = async (mode) => {
+    if (!manualNombre || !window.confirm(`¿Aplicar a todo ${manualNombre}: ${mode === 'previous' ? 'usar página anterior' : mode === 'next' ? 'usar página siguiente' : 'usar misma página'} como datos?`)) return;
+    setDataPageStatus('Aplicando configuración masiva...');
+    try {
+      const result = await applyAdminVisualDataPageOffset({ manualNombre, mode });
+      setDataPageStatus(`Configuración masiva aplicada para ${manualNombre}. Filas afectadas: ${result.affectedRows}.`);
+      await loadPanel();
+    } catch (error) { setDataPageStatus(error.message || 'No se pudo aplicar la configuración masiva.'); }
+  };
+
   const handlePdfUpload = async (event) => {
     event.preventDefault();
     if (!manualNombre) { setUploadStatus('Ingresá el nombre del manual.'); return; }
@@ -234,6 +266,26 @@ function AdminVisualSparePartsPage({ currentPath }) {
           {editingId ? <button className="button button--danger" type="button" onClick={() => handleDelete(editingId)}>🗑 Eliminar punto</button> : null}
           <button className="button button--secondary" type="button" onClick={handleUndoLastPoint} disabled={!lastCreatedPointId}>Deshacer último punto</button>
           <p className="admin-visual-shortcuts">Click en punto → seleccionar. Click en imagen → crear. Enter guarda. Escape cancela. Delete elimina seleccionado. Ctrl+Z deshace el último punto nuevo.</p>
+        </form>
+
+        <form className="admin-visual-form" onSubmit={handleSaveDataPageConfig}>
+          <h2>Datos de esta imagen</h2>
+          <p className="admin-visual-shortcuts">La imagen y los puntos se cargan desde la página visual {pagina || '-'}, pero los códigos/descripciones pueden leerse desde otra página del mismo manual.</p>
+          <label>Página de datos
+            <select value={dataPageMode} onChange={(event) => setDataPageMode(event.target.value)}>
+              <option value="same">Usar misma página</option>
+              <option value="previous">Usar página anterior como página de datos</option>
+              <option value="next">Usar página siguiente como página de datos</option>
+              <option value="custom">Página personalizada</option>
+            </select>
+          </label>
+          {dataPageMode === 'custom' ? <label>Página personalizada<input type="number" min="1" value={customDataPage} onChange={(event) => setCustomDataPage(event.target.value)} placeholder="Ej.: 8" /></label> : null}
+          <button className="button" type="submit">Guardar datos de esta imagen</button>
+          <button className="button button--secondary" type="button" onClick={() => handleApplyMassiveOffset('previous')}>Aplicar a todo este manual: usar página anterior como datos</button>
+          <button className="button button--secondary" type="button" onClick={() => handleApplyMassiveOffset('same')}>Aplicar a todo este manual: usar misma página</button>
+          <button className="button button--secondary" type="button" onClick={() => handleApplyMassiveOffset('next')}>Aplicar a todo este manual: usar página siguiente</button>
+          {panel?.paginaDatos ? <p className="admin-visual-selection">Configuración activa: página visual {panel.paginaVisual || panel.pagina} usa datos de página {panel.paginaDatos}.</p> : null}
+          {dataPageStatus ? <p className="status-message">{dataPageStatus}</p> : null}
         </form>
         {status ? <p className="status-message">{status}</p> : null}
         <div ref={imageWrapRef} className={`visual-panel__image-wrap admin-visual-image${moveMode ? ' visual-panel__image-wrap--dragging' : ''}`} onClick={handleImageClick} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} role="button" tabIndex="0">

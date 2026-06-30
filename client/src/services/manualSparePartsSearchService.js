@@ -133,3 +133,32 @@ export async function uploadVisualManualPdf({ manualNombre = '', archivo } = {})
   if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudieron generar imágenes desde el PDF.'));
   return response.json();
 }
+
+export async function getAdminVisualDataPageConfig({ manualNombre = '', paginaVisual = '' } = {}) {
+  const params = new URLSearchParams({ manualNombre: String(manualNombre).trim(), paginaVisual: String(paginaVisual).trim() });
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/paginas-datos?${params.toString()}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo cargar la página de datos.'));
+  return response.json();
+}
+
+export async function saveAdminVisualDataPageConfig(config) {
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/paginas-datos`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(config)
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo guardar la página de datos.'));
+  return response.json();
+}
+
+export async function applyAdminVisualDataPageOffset({ manualNombre = '', mode = 'previous' } = {}) {
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/paginas-datos/offset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ manualNombre, mode })
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo aplicar el offset masivo.'));
+  return response.json();
+}
