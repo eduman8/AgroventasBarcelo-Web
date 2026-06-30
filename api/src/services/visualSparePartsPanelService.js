@@ -16,6 +16,13 @@ const normalizePage = (value) => {
   const page = Number.parseInt(value, 10);
   return Number.isInteger(page) && page > 0 ? page : null;
 };
+const normalizeDataPageMode = (value) => ['same', 'previous', 'next', 'custom'].includes(value) ? value : 'same';
+const getPageByMode = (visualPage, mode, customPage = null) => {
+  if (mode === 'previous') return Math.max(1, visualPage - 1);
+  if (mode === 'next') return visualPage + 1;
+  if (mode === 'custom') return normalizePage(customPage) ?? visualPage;
+  return visualPage;
+};
 const normalizePercent = (value) => {
   const percent = Number.parseFloat(value);
   if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
@@ -69,6 +76,22 @@ const resolveImageUrl = (manualNombre, pagina) => {
 export const ensureVisualPointsTable = async (pool) => {
   await ensureVisualManualImagesTable(pool);
   await pool.request().query(`
+IF NOT EXISTS (SELECT 1 FROM sys.tables t INNER JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.name = N'RepuestosManualesPaginasVisuales' AND s.name = N'dbo')
+BEGIN
+  CREATE TABLE dbo.RepuestosManualesPaginasVisuales (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    ManualNombre NVARCHAR(200) NOT NULL,
+    PaginaVisual INT NOT NULL,
+    PaginaDatos INT NOT NULL,
+    Activo BIT NOT NULL CONSTRAINT DF_RepuestosManualesPaginasVisuales_Activo DEFAULT 1,
+    CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_RepuestosManualesPaginasVisuales_CreatedAt DEFAULT SYSUTCDATETIME(),
+    UpdatedAt DATETIME2 NULL
+  );
+END;
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_RepuestosManualesPaginasVisuales_ManualPaginaVisual' AND object_id = OBJECT_ID(N'dbo.RepuestosManualesPaginasVisuales'))
+BEGIN
+  CREATE UNIQUE INDEX UX_RepuestosManualesPaginasVisuales_ManualPaginaVisual ON dbo.RepuestosManualesPaginasVisuales (ManualNombre, PaginaVisual);
+END;
 IF NOT EXISTS (SELECT 1 FROM sys.tables t INNER JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.name = N'RepuestosManualesPuntosVisuales' AND s.name = N'dbo')
 BEGIN
   CREATE TABLE dbo.RepuestosManualesPuntosVisuales (
@@ -123,7 +146,7 @@ SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.Ref
 FROM dbo.RepuestosManualesPuntosVisuales pv
 OUTER APPLY (
   SELECT TOP (1) rm.* FROM dbo.RepuestosManuales rm
-  WHERE rm.Activo = 1 AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = pv.Pagina
+  WHERE rm.Activo = 1 AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = @paginaDatos
     AND ${directManualReferenceNormalized} = ${pointReferenceNormalized}
     AND (NULLIF(LTRIM(RTRIM(rm.Codigo)), '') IS NOT NULL OR NULLIF(LTRIM(RTRIM(rm.Descripcion)), '') IS NOT NULL)
   ORDER BY
@@ -135,7 +158,7 @@ OUTER APPLY (
   FROM (
     SELECT rm.*, ROW_NUMBER() OVER (ORDER BY rm.Id) AS inferredReferenciaDespiece
     FROM dbo.RepuestosManuales rm
-    WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = pv.Pagina
+    WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = @paginaDatos
   ) ordered
   WHERE directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
   ORDER BY ordered.Id
@@ -222,7 +245,7 @@ OUTER APPLY (
   FROM dbo.RepuestosManuales rm
   WHERE rm.Activo = 1
     AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
-    AND rm.Pagina = pv.Pagina
+    AND rm.Pagina = @pagina
     AND ${directManualReferenceNormalized} = ${pointReferenceNormalized}
     AND (NULLIF(LTRIM(RTRIM(rm.Codigo)), '') IS NOT NULL OR NULLIF(LTRIM(RTRIM(rm.Descripcion)), '') IS NOT NULL)
   ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(COALESCE(rm.ReferenciaDespiece, '')))) = UPPER(LTRIM(RTRIM(pv.ReferenciaDespiece))) THEN 0 ELSE 1 END, rm.Id
@@ -233,7 +256,7 @@ OUTER APPLY (
     SELECT rm.*, ROW_NUMBER() OVER (ORDER BY rm.Id) AS inferredReferenciaDespiece
     FROM dbo.RepuestosManuales rm
     WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
-      AND rm.Pagina = pv.Pagina
+      AND rm.Pagina = @pagina
   ) ordered
   WHERE directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
   ORDER BY ordered.Id
@@ -276,6 +299,74 @@ const mapPoint = (point) => ({
   pagina: point.pagina
 });
 
+export const getVisualDataPageConfig = async ({ manualNombre, pagina }) => {
+  const pool = await getSqlPool();
+  await ensureVisualPointsTable(pool);
+  const manual = normalizeManualName(manualNombre);
+  const visualPage = normalizePage(pagina);
+  if (!manual || !visualPage) return { manualNombre: manual, paginaVisual: visualPage, paginaDatos: visualPage, mode: 'same', hasCustomConfig: false };
+  const result = await pool.request()
+    .input('manualNombre', sql.NVarChar(200), manual)
+    .input('paginaVisual', sql.Int, visualPage)
+    .query(`
+SELECT TOP (1) PaginaDatos AS paginaDatos
+FROM dbo.RepuestosManualesPaginasVisuales
+WHERE Activo = 1 AND LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@manualNombre)) AND PaginaVisual = @paginaVisual
+ORDER BY Id DESC;`);
+  const dataPage = normalizePage(result.recordset?.[0]?.paginaDatos) ?? visualPage;
+  const diff = dataPage - visualPage;
+  const mode = diff === -1 ? 'previous' : diff === 0 ? 'same' : diff === 1 ? 'next' : 'custom';
+  return { manualNombre: manual, paginaVisual: visualPage, paginaDatos: dataPage, mode, hasCustomConfig: Boolean(result.recordset?.[0]) };
+};
+
+export const saveVisualDataPageConfig = async ({ manualNombre, paginaVisual, paginaDatos, mode = 'custom' }) => {
+  const pool = await getSqlPool();
+  await ensureVisualPointsTable(pool);
+  const manual = normalizeManualName(manualNombre);
+  const visualPage = normalizePage(paginaVisual);
+  const dataPage = visualPage ? getPageByMode(visualPage, normalizeDataPageMode(mode), paginaDatos) : null;
+  if (!manual || !visualPage || !dataPage) throw new Error('Datos inválidos para configurar la página de datos.');
+  const result = await pool.request()
+    .input('manualNombre', sql.NVarChar(200), manual)
+    .input('paginaVisual', sql.Int, visualPage)
+    .input('paginaDatos', sql.Int, dataPage)
+    .query(`
+MERGE dbo.RepuestosManualesPaginasVisuales AS target
+USING (SELECT @manualNombre AS ManualNombre, @paginaVisual AS PaginaVisual) AS source
+ON LTRIM(RTRIM(target.ManualNombre)) = LTRIM(RTRIM(source.ManualNombre)) AND target.PaginaVisual = source.PaginaVisual
+WHEN MATCHED THEN UPDATE SET PaginaDatos = @paginaDatos, Activo = 1, UpdatedAt = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT (ManualNombre, PaginaVisual, PaginaDatos, Activo) VALUES (@manualNombre, @paginaVisual, @paginaDatos, 1)
+OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.PaginaVisual AS paginaVisual, INSERTED.PaginaDatos AS paginaDatos, INSERTED.Activo AS activo;`);
+  return result.recordset?.[0];
+};
+
+export const applyVisualDataPageOffset = async ({ manualNombre, mode = 'previous' }) => {
+  const pool = await getSqlPool();
+  await ensureVisualPointsTable(pool);
+  const manual = normalizeManualName(manualNombre);
+  const normalizedMode = normalizeDataPageMode(mode);
+  if (!manual) throw new Error('Ingresá el manual para aplicar la acción masiva.');
+  const offset = normalizedMode === 'previous' ? -1 : normalizedMode === 'next' ? 1 : 0;
+  const result = await pool.request()
+    .input('manualNombre', sql.NVarChar(200), manual)
+    .input('offset', sql.Int, offset)
+    .query(`
+WITH visualPages AS (
+  SELECT ManualNombre, Pagina AS PaginaVisual FROM dbo.RepuestosManualesImagenes WHERE Activo = 1 AND LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  UNION
+  SELECT ManualNombre, Pagina AS PaginaVisual FROM dbo.RepuestosManualesPuntosVisuales WHERE Activo = 1 AND LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+), prepared AS (
+  SELECT LTRIM(RTRIM(@manualNombre)) AS ManualNombre, PaginaVisual, CASE WHEN PaginaVisual + @offset < 1 THEN 1 ELSE PaginaVisual + @offset END AS PaginaDatos FROM visualPages
+)
+MERGE dbo.RepuestosManualesPaginasVisuales AS target
+USING prepared AS source
+ON LTRIM(RTRIM(target.ManualNombre)) = LTRIM(RTRIM(source.ManualNombre)) AND target.PaginaVisual = source.PaginaVisual
+WHEN MATCHED THEN UPDATE SET PaginaDatos = source.PaginaDatos, Activo = 1, UpdatedAt = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT (ManualNombre, PaginaVisual, PaginaDatos, Activo) VALUES (source.ManualNombre, source.PaginaVisual, source.PaginaDatos, 1);
+SELECT @@ROWCOUNT AS affectedRows;`);
+  return { manualNombre: manual, mode: normalizedMode, affectedRows: result.recordset?.[0]?.affectedRows ?? 0 };
+};
+
 export const getVisualSparePartsPanel = async ({ manualNombre, pagina }) => {
   const pool = await getSqlPool();
   await ensureVisualPointsTable(pool);
@@ -283,10 +374,11 @@ export const getVisualSparePartsPanel = async ({ manualNombre, pagina }) => {
   const page = normalizePage(pagina);
   if (!manual || !page) return { manualNombre: manual, pagina: page, imageUrl: null, puntos: [] };
   const schema = await getManualSparePartsPanelSchema(pool);
-  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).query(buildPanelQuery(schema));
+  const dataPageConfig = await getVisualDataPageConfig({ manualNombre: manual, pagina: page });
+  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('paginaDatos', sql.Int, dataPageConfig.paginaDatos).query(buildPanelQuery(schema));
   logPanelDiagnostics({ manualNombre: manual, pagina: page, rows: result.recordset ?? [] });
   const databaseImageUrl = await getManualImageUrl(pool, { manualNombre: manual, pagina: page });
-  return { manualNombre: manual, pagina: page, imageUrl: databaseImageUrl || resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
+  return { manualNombre: manual, pagina: page, paginaVisual: page, paginaDatos: dataPageConfig.paginaDatos, dataPageConfig, imageUrl: databaseImageUrl || resolveImageUrl(manual, page), puntos: (result.recordset ?? []).map(mapPoint) };
 };
 
 

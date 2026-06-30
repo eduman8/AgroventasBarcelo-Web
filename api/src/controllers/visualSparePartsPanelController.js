@@ -1,4 +1,4 @@
-import { createVisualPoint, deleteVisualPoint, getVisualSparePartsPanel, updateVisualPoint } from '../services/visualSparePartsPanelService.js';
+import { applyVisualDataPageOffset, createVisualPoint, deleteVisualPoint, getVisualDataPageConfig, getVisualSparePartsPanel, saveVisualDataPageConfig, updateVisualPoint } from '../services/visualSparePartsPanelService.js';
 
 const handleError = (response, error, message, status = 500) => {
   console.error('[visual-spare-parts-panel]', error);
@@ -32,4 +32,20 @@ export const deleteAdminVisualPointController = async (request, response) => {
     if (!deleted) return response.status(404).json({ status: 'error', message: 'Punto visual no encontrado.' });
     return response.status(204).send();
   } catch (error) { return handleError(response, error, 'No se pudo eliminar el punto visual.'); }
+};
+
+
+export const getAdminVisualDataPageConfigController = async (request, response) => {
+  try { response.json(await getVisualDataPageConfig({ manualNombre: request.query.manualNombre, pagina: request.query.paginaVisual || request.query.pagina })); }
+  catch (error) { handleError(response, error, 'No se pudo cargar la configuración de página de datos.'); }
+};
+
+export const saveAdminVisualDataPageConfigController = async (request, response) => {
+  try { response.json(await saveVisualDataPageConfig(request.body)); }
+  catch (error) { handleError(response, error, error.message || 'No se pudo guardar la configuración de página de datos.', 400); }
+};
+
+export const applyAdminVisualDataPageOffsetController = async (request, response) => {
+  try { response.json(await applyVisualDataPageOffset(request.body)); }
+  catch (error) { handleError(response, error, error.message || 'No se pudo aplicar la configuración masiva.', 400); }
 };
