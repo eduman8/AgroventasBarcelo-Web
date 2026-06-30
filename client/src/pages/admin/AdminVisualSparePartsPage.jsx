@@ -134,7 +134,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
       refreshPointInPanel(savedPoint);
       await refreshPointDetails();
       setLastCreatedPointId(editingId ? null : savedPoint?.id ?? null);
-      selectPoint({ ...savedPoint, codigo: selectedPoint?.codigo, descripcion: selectedPoint?.descripcion }, editingId ? `Punto ${trimmedReference} actualizado.` : `Punto ${trimmedReference} guardado.`);
+      selectPoint({ ...savedPoint, codigo: selectedManualLink?.codigo ?? selectedPoint?.codigo, descripcion: selectedManualLink?.descripcion ?? selectedPoint?.descripcion }, editingId ? `Punto ${trimmedReference} actualizado.` : `Punto ${trimmedReference} guardado.`);
     } catch (error) { setStatus(error.message || 'Error al guardar punto'); }
   };
 
@@ -237,15 +237,15 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const handleSearchManualLink = async () => {
     const dataPage = panel?.paginaDatos || customDataPage || pagina;
     if (!manualNombre || !dataPage) { setManualLinkStatus('Cargá manual y página de datos antes de buscar.'); return; }
-    setManualLinkStatus('Buscando repuestos de la página de datos...');
+    setManualLinkStatus(manualLinkSearch.trim() ? 'Buscando repuestos en la página de datos y en el mismo manual...' : 'Buscando repuestos de la página de datos...');
     try {
       const response = await searchAdminVisualManualSpareParts({ manualNombre, paginaDatos: dataPage, search: manualLinkSearch });
       setManualLinkResults(response.data || []);
-      setManualLinkStatus((response.data || []).length ? `${(response.data || []).length} repuestos encontrados.` : 'No se encontraron repuestos en esa página.');
+      setManualLinkStatus((response.data || []).length ? `${(response.data || []).length} repuestos encontrados.` : (manualLinkSearch.trim() ? 'No se encontraron repuestos en este manual.' : 'No se encontraron repuestos en esa página.'));
     } catch (error) { setManualLinkStatus(error.message || 'No se pudieron buscar repuestos.'); }
   };
 
-  const formatManualLink = (part) => [part.codigo || 'Sin código', part.descripcion || 'Sin descripción'].filter(Boolean).join(' · ');
+  const formatManualLink = (part) => `Código ${part.codigo || 'Sin código'} — Página ${part.pagina || part.paginaImpresa || '-'} — ${part.descripcion || 'Sin descripción'}`;
 
   const handlePdfUpload = async (event) => {
     event.preventDefault();
@@ -286,14 +286,14 @@ function AdminVisualSparePartsPage({ currentPath }) {
 
           <fieldset className="admin-visual-link-section">
             <legend>Vincular repuesto manual</legend>
-            <p className="admin-visual-shortcuts">Buscá por código o descripción entre los repuestos de la página de datos configurada ({panel?.paginaDatos || customDataPage || pagina || '-'}).</p>
+            <p className="admin-visual-shortcuts">Buscá por código o descripción. Sin texto se listan repuestos de la página de datos configurada ({panel?.paginaDatos || customDataPage || pagina || '-'}); con texto también se busca en todo el mismo manual.</p>
             {selectedManualLink ? (
               <p className="admin-visual-selection">Vinculado: {formatManualLink(selectedManualLink)} <button type="button" onClick={() => setSelectedManualLink(null)}>Desvincular</button></p>
             ) : <p className="admin-visual-selection">Sin vínculo manual. Se usará cruce directo o inferido.</p>}
             <label>Buscar repuesto<input value={manualLinkSearch} onChange={(event) => setManualLinkSearch(event.target.value)} placeholder="Código o descripción" /></label>
-            <button className="button button--secondary" type="button" onClick={handleSearchManualLink}>Buscar en página de datos</button>
+            <button className="button button--secondary" type="button" onClick={handleSearchManualLink}>Buscar repuesto</button>
             {manualLinkStatus ? <p className="status-message">{manualLinkStatus}</p> : null}
-            {manualLinkResults.length ? <div className="manual-spare-parts-table-wrapper"><table className="manual-spare-parts-table"><thead><tr><th>Código</th><th>Descripción</th><th>Ref.</th><th>Acción</th></tr></thead><tbody>{manualLinkResults.map((part) => <tr key={part.id}><td>{part.codigo || 'Sin código'}</td><td>{part.descripcion || 'Sin descripción'}</td><td>{part.referenciaDespiece || '-'}</td><td><button type="button" onClick={() => setSelectedManualLink(part)}>Seleccionar</button></td></tr>)}</tbody></table></div> : null}
+            {manualLinkResults.length ? <div className="manual-spare-parts-table-wrapper"><table className="manual-spare-parts-table"><thead><tr><th>Repuesto</th><th>Ref.</th><th>Página impresa</th><th>Acción</th></tr></thead><tbody>{manualLinkResults.map((part) => <tr key={part.id}><td>{formatManualLink(part)}</td><td>{part.referenciaDespiece || '-'}</td><td>{part.paginaImpresa || '-'}</td><td><button type="button" onClick={() => setSelectedManualLink(part)}>Seleccionar</button></td></tr>)}</tbody></table></div> : null}
           </fieldset>
           <p className="admin-visual-selection">{editingId ? `Seleccionado: ${referenciaDespiece || 'sin referencia'} · X ${coords?.xPercent}% / Y ${coords?.yPercent}%` : `Posición: ${coords ? `${coords.xPercent}% / ${coords.yPercent}%` : 'sin capturar'}`}</p>
           <button className="button" type="submit">{editingId ? 'Guardar cambios' : 'Guardar punto'}</button>

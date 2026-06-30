@@ -472,15 +472,27 @@ SELECT TOP (50) rm.Id AS id, rm.Pagina AS pagina, ${printedPageSelect} AS pagina
 FROM dbo.RepuestosManuales rm
 WHERE rm.Activo = 1
   AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
-  AND rm.Pagina = @paginaDatos
   AND (
-    @search = N'%%'
-    OR rm.Codigo LIKE @search
-    OR rm.Descripcion LIKE @search
-    OR rm.ReferenciaDespiece LIKE @search
-    OR rm.Categoria LIKE @search
+    (
+      rm.Pagina = @paginaDatos
+      AND (
+        @search = N'%%'
+        OR rm.Codigo LIKE @search
+        OR rm.Descripcion LIKE @search
+        OR rm.ReferenciaDespiece LIKE @search
+        OR rm.Categoria LIKE @search
+      )
+    )
+    OR (
+      @search <> N'%%'
+      AND rm.Pagina <> @paginaDatos
+      AND (
+        rm.Codigo LIKE @search
+        OR rm.Descripcion LIKE @search
+      )
+    )
   )
-ORDER BY rm.Id;`);
+ORDER BY CASE WHEN rm.Pagina = @paginaDatos THEN 0 ELSE 1 END, rm.Pagina, rm.Id;`);
   return result.recordset ?? [];
 };
 
