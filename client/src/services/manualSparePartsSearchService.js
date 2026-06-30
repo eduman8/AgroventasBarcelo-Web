@@ -91,6 +91,15 @@ export async function getAdminVisualPoints({ manualNombre = '', pagina = '' } = 
   return response.json();
 }
 
+export async function searchAdminVisualManualSpareParts({ manualNombre = '', paginaDatos = '', search = '' } = {}) {
+  const params = new URLSearchParams({ manualNombre: String(manualNombre).trim(), paginaDatos: String(paginaDatos).trim(), search: String(search).trim() });
+  const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/repuestos-manuales?${params.toString()}`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudieron buscar repuestos manuales para vincular.'));
+  return response.json();
+}
+
 export async function createAdminVisualPoint(point) {
   const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/puntos`, {
     method: 'POST',

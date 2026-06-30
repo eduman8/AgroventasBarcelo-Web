@@ -99,12 +99,21 @@ BEGIN
     ManualNombre NVARCHAR(200) NOT NULL,
     Pagina INT NOT NULL,
     ReferenciaDespiece NVARCHAR(150) NOT NULL,
+    RepuestoManualId INT NULL,
     XPercent DECIMAL(6,3) NOT NULL,
     YPercent DECIMAL(6,3) NOT NULL,
     Activo BIT NOT NULL CONSTRAINT DF_RepuestosManualesPuntosVisuales_Activo DEFAULT 1,
     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_RepuestosManualesPuntosVisuales_CreatedAt DEFAULT SYSUTCDATETIME(),
     UpdatedAt DATETIME2 NULL
   );
+END;
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'RepuestoManualId') IS NULL
+BEGIN
+  ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD RepuestoManualId INT NULL;
+END;
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_RepuestosManualesPuntosVisuales_RepuestoManualId' AND object_id = OBJECT_ID(N'dbo.RepuestosManualesPuntosVisuales'))
+BEGIN
+  CREATE INDEX IX_RepuestosManualesPuntosVisuales_RepuestoManualId ON dbo.RepuestosManualesPuntosVisuales (RepuestoManualId) WHERE RepuestoManualId IS NOT NULL;
 END;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_RepuestosManualesPuntosVisuales_ManualPagina' AND object_id = OBJECT_ID(N'dbo.RepuestosManualesPuntosVisuales'))
 BEGIN
@@ -135,18 +144,23 @@ const buildPanelQuery = ({ modelColumn }) => {
   const pointReferenceNormalized = buildNormalizedReferenceExpression('pv.ReferenciaDespiece');
 
   return `
-SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.ReferenciaDespiece AS referenciaDespiece,
+SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.ReferenciaDespiece AS referenciaDespiece, pv.RepuestoManualId AS repuestoManualId,
   CAST(pv.XPercent AS FLOAT) AS xPercent, CAST(pv.YPercent AS FLOAT) AS yPercent, pv.Activo AS activo,
   matched.Codigo AS codigo, matched.Descripcion AS descripcion, matched.Categoria AS categoria, matched.Marca AS marca, ${modelSelect} AS modelo,
-  CASE WHEN directMatch.Id IS NOT NULL THEN 'direct' WHEN inferredMatch.Id IS NOT NULL THEN 'inferredByPageOrder' ELSE 'none' END AS matchSource,
-  directMatch.Id AS directMatchId, inferredMatch.Id AS inferredMatchId,
+  CASE WHEN manualLink.Id IS NOT NULL THEN 'manualLink' WHEN directMatch.Id IS NOT NULL THEN 'direct' WHEN inferredMatch.Id IS NOT NULL THEN 'inferredByPageOrder' ELSE 'none' END AS matchSource,
+  manualLink.Id AS manualLinkId, directMatch.Id AS directMatchId, inferredMatch.Id AS inferredMatchId,
   inferredMatch.inferredReferenciaDespiece AS inferredRowNumber, inferredMatch.Codigo AS inferredCodigo,
   inferredMatch.Descripcion AS inferredDescripcion, inferredMatch.Categoria AS inferredCategoria,
   catalogo.ID_Articulo AS repuestoCatalogoId
 FROM dbo.RepuestosManualesPuntosVisuales pv
 OUTER APPLY (
   SELECT TOP (1) rm.* FROM dbo.RepuestosManuales rm
-  WHERE rm.Activo = 1 AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = @paginaDatos
+  WHERE rm.Activo = 1 AND rm.Id = pv.RepuestoManualId
+  ORDER BY rm.Id
+) manualLink
+OUTER APPLY (
+  SELECT TOP (1) rm.* FROM dbo.RepuestosManuales rm
+  WHERE manualLink.Id IS NULL AND rm.Activo = 1 AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = @paginaDatos
     AND ${directManualReferenceNormalized} = ${pointReferenceNormalized}
     AND (NULLIF(LTRIM(RTRIM(rm.Codigo)), '') IS NOT NULL OR NULLIF(LTRIM(RTRIM(rm.Descripcion)), '') IS NOT NULL)
   ORDER BY
@@ -160,10 +174,10 @@ OUTER APPLY (
     FROM dbo.RepuestosManuales rm
     WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre)) AND rm.Pagina = @paginaDatos
   ) ordered
-  WHERE directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
+  WHERE manualLink.Id IS NULL AND directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
   ORDER BY ordered.Id
 ) inferredMatch
-OUTER APPLY (SELECT COALESCE(directMatch.Id, inferredMatch.Id) AS Id) selectedMatch
+OUTER APPLY (SELECT COALESCE(manualLink.Id, directMatch.Id, inferredMatch.Id) AS Id) selectedMatch
 LEFT JOIN dbo.RepuestosManuales matched ON matched.Id = selectedMatch.Id
 OUTER APPLY (
   SELECT TOP (1) p.ID_Articulo FROM dbo.Productos p
@@ -227,6 +241,7 @@ WITH puntos AS (
     AND TRY_CONVERT(INT, pv.ReferenciaDespiece) BETWEEN 1 AND 8
 )
 SELECT pv.ReferenciaDespiece AS referenciaVisual,
+  manualLink.Id AS manualLinkId,
   CASE WHEN directMatch.Id IS NULL THEN 0 ELSE 1 END AS matchDirectoEncontrado,
   directMatch.Id AS directMatchId,
   CASE WHEN inferredMatch.Id IS NULL THEN 0 ELSE 1 END AS matchInferidoEncontrado,
@@ -238,12 +253,18 @@ SELECT pv.ReferenciaDespiece AS referenciaVisual,
   matched.Codigo AS codigo,
   matched.Descripcion AS descripcion,
   matched.Categoria AS categoria,
-  CASE WHEN directMatch.Id IS NOT NULL THEN 'direct' WHEN inferredMatch.Id IS NOT NULL THEN 'inferredByPageOrder' ELSE 'none' END AS matchSource
+  CASE WHEN manualLink.Id IS NOT NULL THEN 'manualLink' WHEN directMatch.Id IS NOT NULL THEN 'direct' WHEN inferredMatch.Id IS NOT NULL THEN 'inferredByPageOrder' ELSE 'none' END AS matchSource
 FROM puntos pv
 OUTER APPLY (
   SELECT TOP (1) rm.*
   FROM dbo.RepuestosManuales rm
-  WHERE rm.Activo = 1
+  WHERE rm.Activo = 1 AND rm.Id = pv.RepuestoManualId
+  ORDER BY rm.Id
+) manualLink
+OUTER APPLY (
+  SELECT TOP (1) rm.*
+  FROM dbo.RepuestosManuales rm
+  WHERE manualLink.Id IS NULL AND rm.Activo = 1
     AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
     AND rm.Pagina = @pagina
     AND ${directManualReferenceNormalized} = ${pointReferenceNormalized}
@@ -258,10 +279,10 @@ OUTER APPLY (
     WHERE LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(pv.ManualNombre))
       AND rm.Pagina = @pagina
   ) ordered
-  WHERE directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
+  WHERE manualLink.Id IS NULL AND directMatch.Id IS NULL AND ${inferredReferenceNormalized} = ${pointReferenceNormalized}
   ORDER BY ordered.Id
 ) inferredMatch
-OUTER APPLY (SELECT COALESCE(directMatch.Id, inferredMatch.Id) AS Id) selectedMatch
+OUTER APPLY (SELECT COALESCE(manualLink.Id, directMatch.Id, inferredMatch.Id) AS Id) selectedMatch
 LEFT JOIN dbo.RepuestosManuales matched ON matched.Id = selectedMatch.Id
 ORDER BY TRY_CONVERT(INT, pv.ReferenciaDespiece), pv.ReferenciaDespiece, pv.Id;`;
 };
@@ -284,6 +305,7 @@ const logPanelDiagnostics = ({ manualNombre, pagina, rows }) => {
 
 const mapPoint = (point) => ({
   id: point.id,
+  repuestoManualId: point.repuestoManualId ?? null,
   referenciaDespiece: getDisplayValue(point.referenciaDespiece),
   xPercent: point.xPercent,
   yPercent: point.yPercent,
@@ -389,7 +411,7 @@ const findActiveDuplicateVisualPoint = async (pool, { manualNombre, pagina, refe
     .input('referenciaDespiece', sql.NVarChar(150), referenciaDespiece)
     .input('excludeId', sql.Int, excludeId)
     .query(`
-SELECT TOP (1) Id AS id, ManualNombre AS manualNombre, Pagina AS pagina, ReferenciaDespiece AS referenciaDespiece,
+SELECT TOP (1) Id AS id, ManualNombre AS manualNombre, Pagina AS pagina, ReferenciaDespiece AS referenciaDespiece, RepuestoManualId AS repuestoManualId,
   CAST(XPercent AS FLOAT) AS xPercent, CAST(YPercent AS FLOAT) AS yPercent, Activo AS activo
 FROM dbo.RepuestosManualesPuntosVisuales
 WHERE Activo = 1 AND LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@manualNombre)) AND Pagina = @pagina
@@ -399,10 +421,16 @@ ORDER BY Id;`);
   return duplicate.recordset?.[0] ?? null;
 };
 
-export const createVisualPoint = async ({ manualNombre, pagina, referenciaDespiece, xPercent, yPercent, activo = true }) => {
+const normalizeRepuestoManualId = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const id = Number.parseInt(value, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+export const createVisualPoint = async ({ manualNombre, pagina, referenciaDespiece, xPercent, yPercent, activo = true, repuestoManualId = null }) => {
   const pool = await getSqlPool(); await ensureVisualPointsTable(pool);
   const manual = normalizeManualName(manualNombre); const page = normalizePage(pagina); const reference = normalizeReference(referenciaDespiece);
-  const x = normalizePercent(xPercent); const y = normalizePercent(yPercent);
+  const x = normalizePercent(xPercent); const y = normalizePercent(yPercent); const manualPartId = normalizeRepuestoManualId(repuestoManualId);
   if (!manual || !page || !reference || x === null || y === null) throw new Error('Datos inválidos para crear el punto visual. Verificá manual, página, referencia y coordenadas entre 0 y 100.');
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
   if (duplicatePoint) {
@@ -411,16 +439,16 @@ export const createVisualPoint = async ({ manualNombre, pagina, referenciaDespie
     error.duplicatePoint = duplicatePoint;
     throw error;
   }
-  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, Boolean(activo)).query(`
-INSERT INTO dbo.RepuestosManualesPuntosVisuales (ManualNombre, Pagina, ReferenciaDespiece, XPercent, YPercent, Activo)
-OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.Pagina AS pagina, INSERTED.ReferenciaDespiece AS referenciaDespiece, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
-VALUES (@manualNombre, @pagina, @referenciaDespiece, @xPercent, @yPercent, @activo);`);
+  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, Boolean(activo)).input('repuestoManualId', sql.Int, manualPartId).query(`
+INSERT INTO dbo.RepuestosManualesPuntosVisuales (ManualNombre, Pagina, ReferenciaDespiece, RepuestoManualId, XPercent, YPercent, Activo)
+OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.Pagina AS pagina, INSERTED.ReferenciaDespiece AS referenciaDespiece, INSERTED.RepuestoManualId AS repuestoManualId, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
+VALUES (@manualNombre, @pagina, @referenciaDespiece, @repuestoManualId, @xPercent, @yPercent, @activo);`);
   return result.recordset?.[0];
 };
 
 export const updateVisualPoint = async (id, data) => {
   const pool = await getSqlPool(); await ensureVisualPointsTable(pool);
-  const pointId = Number.parseInt(id, 10); const manual = normalizeManualName(data.manualNombre); const page = normalizePage(data.pagina); const reference = normalizeReference(data.referenciaDespiece); const x = normalizePercent(data.xPercent); const y = normalizePercent(data.yPercent);
+  const pointId = Number.parseInt(id, 10); const manual = normalizeManualName(data.manualNombre); const page = normalizePage(data.pagina); const reference = normalizeReference(data.referenciaDespiece); const x = normalizePercent(data.xPercent); const y = normalizePercent(data.yPercent); const manualPartId = normalizeRepuestoManualId(data.repuestoManualId);
   if (!pointId || !manual || !page || !reference || x === null || y === null) throw new Error('Datos inválidos para actualizar el punto visual. Verificá manual, página, referencia y coordenadas entre 0 y 100.');
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference, excludeId: pointId });
   if (duplicatePoint) {
@@ -429,11 +457,42 @@ export const updateVisualPoint = async (id, data) => {
     error.duplicatePoint = duplicatePoint;
     throw error;
   }
-  const result = await pool.request().input('id', sql.Int, pointId).input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, data.activo !== false).query(`
-UPDATE dbo.RepuestosManualesPuntosVisuales SET ManualNombre=@manualNombre, Pagina=@pagina, ReferenciaDespiece=@referenciaDespiece, XPercent=@xPercent, YPercent=@yPercent, Activo=@activo, UpdatedAt=SYSUTCDATETIME()
-OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.Pagina AS pagina, INSERTED.ReferenciaDespiece AS referenciaDespiece, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
+  const result = await pool.request().input('id', sql.Int, pointId).input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, data.activo !== false).input('repuestoManualId', sql.Int, manualPartId).query(`
+UPDATE dbo.RepuestosManualesPuntosVisuales SET ManualNombre=@manualNombre, Pagina=@pagina, ReferenciaDespiece=@referenciaDespiece, RepuestoManualId=@repuestoManualId, XPercent=@xPercent, YPercent=@yPercent, Activo=@activo, UpdatedAt=SYSUTCDATETIME()
+OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.Pagina AS pagina, INSERTED.ReferenciaDespiece AS referenciaDespiece, INSERTED.RepuestoManualId AS repuestoManualId, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
 WHERE Id=@id;`);
   return result.recordset?.[0] ?? null;
+};
+
+export const searchManualSparePartsForVisualPage = async ({ manualNombre, paginaDatos, search = '' }) => {
+  const pool = await getSqlPool();
+  await ensureVisualPointsTable(pool);
+  const manual = normalizeManualName(manualNombre);
+  const dataPage = normalizePage(paginaDatos);
+  const normalizedSearch = String(search ?? '').trim().slice(0, 150);
+  if (!manual || !dataPage) return [];
+
+  const likeSearch = `%${normalizedSearch}%`;
+  const result = await pool.request()
+    .input('manualNombre', sql.NVarChar(200), manual)
+    .input('paginaDatos', sql.Int, dataPage)
+    .input('search', sql.NVarChar(152), likeSearch)
+    .query(`
+SELECT TOP (50) Id AS id, Pagina AS pagina, PaginaImpresa AS paginaImpresa, ReferenciaDespiece AS referenciaDespiece,
+  Codigo AS codigo, Descripcion AS descripcion, Categoria AS categoria, Marca AS marca, ModeloMaquina AS modelo
+FROM dbo.RepuestosManuales
+WHERE Activo = 1
+  AND LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  AND Pagina = @paginaDatos
+  AND (
+    @search = N'%%'
+    OR Codigo LIKE @search
+    OR Descripcion LIKE @search
+    OR ReferenciaDespiece LIKE @search
+    OR Categoria LIKE @search
+  )
+ORDER BY Id;`);
+  return result.recordset ?? [];
 };
 
 export const deleteVisualPoint = async (id) => {
