@@ -3,11 +3,16 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import Logo from '../ui/Logo.jsx';
 
 function Header({ currentPath = '/' }) {
-  const { isAuthenticated, logout, user } = useAuth();
+  const { isAdmin, isAuthenticated, logout, user } = useAuth();
 
   function handleLogout() {
     logout();
+    if (currentPath.startsWith('/admin')) {
+      window.history.pushState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
   }
+
   return (
     <header className="site-header">
       <div className="site-header__inner">
@@ -26,6 +31,11 @@ function Header({ currentPath = '/' }) {
                 {item.label}
               </a>
             ))}
+            {isAdmin ? (
+              <a className={currentPath.startsWith('/admin') ? 'is-active' : undefined} href="/admin">
+                Panel admin
+              </a>
+            ) : null}
           </div>
           <div className="main-nav__account" aria-label="Cuenta">
             {isAuthenticated ? (

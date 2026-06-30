@@ -5974,3 +5974,104 @@ h1 {
     min-height: 56vh;
   }
 }
+
+.login-page {
+  align-items: center;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f7f7 100%);
+  min-height: clamp(520px, calc(100vh - 210px), 760px);
+  padding: clamp(36px, 7vw, 84px) 0;
+}
+
+.login-card--compact {
+  display: grid;
+  gap: 20px;
+  width: min(440px, calc(100vw - 32px));
+  padding: clamp(24px, 4vw, 36px);
+}
+
+.login-card__header {
+  display: grid;
+  gap: 10px;
+}
+
+.login-card__header h1 {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: clamp(2rem, 7vw, 2.65rem);
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+}
+
+.login-card__header p:not(.eyebrow) {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.login-card--compact .login-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 0;
+}
+
+.login-card--compact .contact-form__submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.login-card--compact .login-access-request {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+  margin-top: 0;
+  padding-top: 20px;
+}
+
+.admin-access-denied {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: linear-gradient(180deg, #171717 0%, #050505 100%);
+  padding: clamp(24px, 6vw, 64px);
+}
+
+.admin-access-denied__card {
+  display: grid;
+  justify-items: start;
+  gap: 18px;
+  width: min(560px, 100%);
+  border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+  padding: clamp(26px, 5vw, 44px);
+}
+
+.admin-access-denied__card h1 {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: clamp(2rem, 7vw, 3rem);
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.admin-access-denied__card p:not(.eyebrow) {
+  margin: 0;
+  color: var(--color-text);
+  font-size: clamp(1rem, 2.5vw, 1.12rem);
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+@media (max-width: 560px) {
+  .login-card--compact .login-access-request {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .login-card--compact .login-access-request .button,
+  .admin-access-denied__card .button {
+    width: 100%;
+  }
+}

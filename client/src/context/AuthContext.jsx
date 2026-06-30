@@ -1,5 +1,5 @@
-import { createContext, useContext, useMemo, useState } from 'react';
-import { clearStoredSession, getStoredSession, isSessionValid, login, storeSession } from '../services/authService.js';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { clearStoredSession, getStoredSession, isAdminUser, isSessionValid, login, storeSession } from '../services/authService.js';
 
 const AuthContext = createContext(null);
 
@@ -19,19 +19,30 @@ export function AuthProvider({ children }) {
     setSession(null);
   }
 
+  useEffect(() => {
+    if (session && !isSessionValid(session)) {
+      clearStoredSession();
+      setSession(null);
+    }
+  }, [session]);
+
+  const isAuthenticated = isSessionValid(session);
+  const user = isAuthenticated ? {
+    id: session.id,
+    nombre: session.nombre,
+    email: session.email,
+    rol: session.rol
+  } : null;
+
   const value = useMemo(() => ({
-    session,
-    token: session?.token ?? null,
-    user: session ? {
-      id: session.id,
-      nombre: session.nombre,
-      email: session.email,
-      rol: session.rol
-    } : null,
-    isAuthenticated: isSessionValid(session),
+    session: isAuthenticated ? session : null,
+    token: isAuthenticated ? session?.token ?? null : null,
+    user,
+    isAuthenticated,
+    isAdmin: isAdminUser(user),
     signIn,
     logout
-  }), [session]);
+  }), [isAuthenticated, session, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -23,12 +23,19 @@ function decodeTokenPayload(token) {
   }
 }
 
+export function isAdminUser(user) {
+  return String(user?.rol ?? '').trim().toLowerCase() === 'admin';
+}
+
 export function isSessionValid(session) {
   if (!session?.token) return false;
 
   const payload = decodeTokenPayload(session.token);
 
-  return Number(payload?.exp) > Math.floor(Date.now() / 1000);
+  return Number(payload?.exp) > Math.floor(Date.now() / 1000)
+    && Number(payload?.userId) === Number(session.id)
+    && String(payload?.email ?? '').toLowerCase() === String(session.email ?? '').toLowerCase()
+    && String(payload?.rol ?? '').trim().toLowerCase() === String(session.rol ?? '').trim().toLowerCase();
 }
 
 export function getStoredSession() {
