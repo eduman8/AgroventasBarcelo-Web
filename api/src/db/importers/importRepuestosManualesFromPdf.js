@@ -35,6 +35,11 @@ const visualVerificationChecks = [
     manualNombre: 'Repuestos Rastras',
     pageNumber: 6,
     codes: ['56-0603', '82-0008', 'C0921', 'C0920']
+  },
+  {
+    manualNombre: 'Repuestos Rastras',
+    pageNumber: 7,
+    codes: ['C1867', 'C0867']
   }
 ];
 
@@ -442,6 +447,26 @@ const looksLikeUsefulDescription = (description) => {
   return true;
 };
 
+const isCodeOnlyLine = (line) => {
+  const matches = [...line.matchAll(codePattern)];
+
+  return matches.length === 1 && normalizeCode(matches[0][0]) === normalizeCode(line);
+};
+
+const isLikelyStandaloneDescriptionLine = (line) => {
+  const description = cleanDescription(line);
+
+  if (!looksLikeUsefulDescription(description)) {
+    return false;
+  }
+
+  if (isCodeOnlyLine(description) || [...description.matchAll(codePattern)].length > 0) {
+    return false;
+  }
+
+  return true;
+};
+
 const detectSparePartsInLine = ({ line, pageNumber, printedPageNumber, manualNombre, archivoOrigen }) => {
   const results = [];
   const matches = [...line.matchAll(codePattern)];
@@ -474,12 +499,69 @@ const detectSparePartsInLine = ({ line, pageNumber, printedPageNumber, manualNom
   return results;
 };
 
+const buildSparePartKey = (sparePart) => `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.pagina}|${sparePart.paginaImpresa ?? ''}|${sparePart.referenciaDespiece ?? ''}`;
+
+const buildCodePageKey = (sparePart) => `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.pagina}|${sparePart.paginaImpresa ?? ''}`;
+
+const findNextUsefulLine = (lines, startIndex) => {
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    const line = cleanDescription(lines[index]);
+
+    if (line) {
+      return line;
+    }
+  }
+
+  return null;
+};
+
+const detectStandaloneCodeDescriptionBlock = ({ lines, lineIndex, pageNumber, printedPageNumber, manualNombre, archivoOrigen }) => {
+  const line = cleanDescription(lines[lineIndex]);
+
+  if (!isCodeOnlyLine(line)) {
+    return null;
+  }
+
+  const description = findNextUsefulLine(lines, lineIndex);
+
+  if (!description || !isLikelyStandaloneDescriptionLine(description)) {
+    return null;
+  }
+
+  return {
+    manualNombre,
+    archivoOrigen,
+    pagina: pageNumber,
+    paginaImpresa: printedPageNumber,
+    codigo: normalizeCode(line),
+    descripcion: description,
+    referenciaDespiece: null,
+    categoria: inferCategory(description)
+  };
+};
+
+const addSparePartIfNew = ({ sparePart, spareParts, seen, seenCodePage }) => {
+  const key = buildSparePartKey(sparePart);
+  const codePageKey = buildCodePageKey(sparePart);
+
+  if (seen.has(key)) {
+    return false;
+  }
+
+  seen.add(key);
+  seenCodePage.add(codePageKey);
+  spareParts.push(sparePart);
+
+  return true;
+};
+
 const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
   const spareParts = [];
   const seen = new Set();
+  const seenCodePage = new Set();
 
   for (const page of pages) {
-    for (const line of page.lines) {
+    page.lines.forEach((line, lineIndex) => {
       const detectedInLine = detectSparePartsInLine({
         line,
         pageNumber: page.pageNumber,
@@ -489,14 +571,24 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
       });
 
       for (const sparePart of detectedInLine) {
-        const key = `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.pagina}|${sparePart.paginaImpresa ?? ''}|${sparePart.referenciaDespiece ?? ''}`;
-
-        if (!seen.has(key)) {
-          seen.add(key);
-          spareParts.push(sparePart);
-        }
+        addSparePartIfNew({ sparePart, spareParts, seen, seenCodePage });
       }
-    }
+
+      const standaloneSparePart = detectStandaloneCodeDescriptionBlock({
+        lines: page.lines,
+        lineIndex,
+        pageNumber: page.pageNumber,
+        printedPageNumber: page.printedPageNumber,
+        manualNombre,
+        archivoOrigen
+      });
+
+      if (!standaloneSparePart || seenCodePage.has(buildCodePageKey(standaloneSparePart))) {
+        return;
+      }
+
+      addSparePartIfNew({ sparePart: standaloneSparePart, spareParts, seen, seenCodePage });
+    });
   }
 
   return spareParts;
@@ -516,10 +608,16 @@ const insertSparePartIfMissing = async (pool, sparePart) => {
 IF EXISTS (
     SELECT 1
     FROM dbo.RepuestosManuales
-    WHERE Codigo = @Codigo
-      AND ManualNombre = @ManualNombre
-      AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
-      AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
+    WHERE (
+        Codigo = @Codigo
+        AND ManualNombre = @ManualNombre
+        AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
+        AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
+    )
+    OR (
+        Codigo = @Codigo
+        AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)))
+    )
 )
 BEGIN
     DECLARE @updatedCategory INT = 0;
