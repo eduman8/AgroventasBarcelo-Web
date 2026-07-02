@@ -27,6 +27,7 @@ export const PDFS_TO_IMPORT = [
 const pdfsDirectory = path.resolve(__dirname, '../../public/pdfs');
 const codePattern = /\b(?:[CP]\d{4}|[A-Z]\d{3,5}|\d{2}\s*[-–—]\s*\d{4})\b/g;
 const leadingElementNumberPattern = /^\s*(\d{1,4})(?:[.)-])?\s+/;
+const tableHeaderPattern = /n[.º°]?\s*de\s*elemento|n[.º°]?\s*de\s*pieza|descripci[oó]n|cantidad/i;
 const repeatedWhitespacePattern = /\s+/g;
 const objectPattern = /(\d+)\s+0\s+obj\s*([\s\S]*?)\s*endobj/g;
 const streamPattern = /stream\r?\n([\s\S]*?)\r?\nendstream/;
@@ -539,9 +540,143 @@ const detectSparePartsInLine = ({ line, lineIndex = null, pageNumber, printedPag
   return results;
 };
 
-const buildSparePartKey = (sparePart) => `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.pagina}|${sparePart.paginaImpresa ?? ''}|${sparePart.referenciaDespiece ?? ''}`;
+const buildSparePartKey = (sparePart) => [
+  sparePart.manualNombre,
+  sparePart.archivoOrigen,
+  sparePart.pagina,
+  sparePart.referenciaDespiece ?? '',
+  sparePart.codigo
+].join('|');
 
-const buildCodePageKey = (sparePart) => `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.pagina}|${sparePart.paginaImpresa ?? ''}`;
+const buildCodePageKey = (sparePart) => `${sparePart.codigo}|${sparePart.manualNombre}|${sparePart.archivoOrigen}|${sparePart.pagina}|${sparePart.referenciaDespiece ?? ''}`;
+
+
+const normalizeHeaderText = (value) => normalizeCategoryText(value).replace(/[.º°]/g, '').replace(repeatedWhitespacePattern, ' ');
+
+const hasCoordinateTableHeader = (page) => {
+  const headerText = normalizeHeaderText(page.lines.join(' '));
+  const nDeMatches = headerText.match(/n de/g) ?? [];
+  return nDeMatches.length >= 2
+    && headerText.includes('elemento')
+    && headerText.includes('pieza')
+    && headerText.includes('descripcion')
+    && headerText.includes('cantidad');
+};
+
+const getCoordinateTableCells = (tokens) => {
+  const elementToken = tokens.find((token) => /^\d{1,4}$/.test(token.text));
+  const quantityToken = [...tokens].reverse().find((token) => /^\d{1,4}$/.test(token.text) && token.order !== elementToken?.order);
+
+  if (!elementToken || !quantityToken || quantityToken.x - elementToken.x < 80) {
+    return null;
+  }
+
+  const betweenTokens = tokens.filter((token) => token.order > elementToken.order && token.order < quantityToken.order);
+  let code = null;
+  let codeEndOrder = null;
+  const firstBetween = betweenTokens[0];
+  const secondBetween = betweenTokens[1];
+  const thirdBetween = betweenTokens[2];
+
+  const firstCodeMatch = firstBetween?.text.match(codePattern);
+
+  if (firstCodeMatch) {
+    code = normalizeCode(firstCodeMatch[0]);
+    codeEndOrder = firstBetween.order;
+  } else if (firstBetween && secondBetween?.text === '-' && thirdBetween && /^\d{2}$/.test(firstBetween.text) && /^\d{4}$/.test(thirdBetween.text)) {
+    code = normalizeCode(`${firstBetween.text}-${thirdBetween.text}`);
+    codeEndOrder = thirdBetween.order;
+  }
+
+  if (!code || codeEndOrder === null) {
+    return null;
+  }
+
+  const description = cleanDescription(tokens
+    .filter((token) => token.order > codeEndOrder && token.order < quantityToken.order)
+    .sort((first, second) => first.x - second.x || first.order - second.order)
+    .map((token) => token.text)
+    .join(' '));
+
+  return {
+    elementToken,
+    quantityToken,
+    codigo: code,
+    description,
+    columnas: { elementX: elementToken.x, codeX: firstBetween?.x ?? null, descriptionX: tokens.find((token) => token.order > codeEndOrder)?.x ?? null, quantityX: quantityToken.x }
+  };
+};
+
+const buildCoordinateTableCandidate = ({ line, pageNumber, printedPageNumber, manualNombre, archivoOrigen }) => {
+  const tokens = line.tokens.map((token) => ({ ...token, text: normalizeText(token.text) })).filter((token) => token.text);
+  const cells = getCoordinateTableCells(tokens);
+  const baseDebug = {
+    source: 'coordinate-table-row',
+    y: line.y,
+    line: line.text,
+    tokens,
+    descartado: true
+  };
+
+  if (!cells) {
+    return { debug: { ...baseDebug, motivoDescarte: 'La fila no tiene referencia, código, descripción y cantidad en columnas X/Y.' }, sparePart: null };
+  }
+
+  const debug = {
+    ...baseDebug,
+    referenciaDetectada: cells.elementToken.text,
+    codigoDetectado: cells.codigo,
+    descripcionDetectada: cells.description || null,
+    cantidadDetectada: cells.quantityToken.text,
+    columnas: cells.columnas
+  };
+
+  if (!looksLikeUsefulDescription(cells.description)) return { debug: { ...debug, motivoDescarte: 'La descripción de la columna central no parece útil.' }, sparePart: null };
+
+  return {
+    debug: { ...debug, descartado: false, motivoDescarte: null },
+    sparePart: {
+      manualNombre,
+      archivoOrigen,
+      pagina: pageNumber,
+      paginaImpresa: printedPageNumber,
+      codigo: cells.codigo,
+      descripcion: cells.description,
+      referenciaDespiece: cells.elementToken.text,
+      categoria: inferCategory(cells.description)
+    }
+  };
+};
+
+const detectCoordinateTableSpareParts = ({ page, manualNombre, archivoOrigen }) => {
+  if (!hasCoordinateTableHeader(page)) {
+    return [];
+  }
+
+  page.debugDetections.push({
+    source: 'coordinate-table-header',
+    descartado: false,
+    motivoDescarte: null,
+    encabezadosDetectados: ['N.º de elemento', 'N.º de pieza', 'Descripción', 'Cantidad']
+  });
+
+  return page.lineGroups.flatMap((line) => {
+    if (tableHeaderPattern.test(line.text)) {
+      return [];
+    }
+
+    const candidate = buildCoordinateTableCandidate({
+      line,
+      pageNumber: page.pageNumber,
+      printedPageNumber: page.printedPageNumber,
+      manualNombre,
+      archivoOrigen
+    });
+    page.debugDetections.push(candidate.debug);
+
+    return candidate.sparePart ? [candidate.sparePart] : [];
+  });
+};
 
 const findNextUsefulLine = (lines, startIndex) => {
   for (let index = startIndex + 1; index < lines.length; index += 1) {
@@ -614,6 +749,16 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
   const seenCodePage = new Set();
 
   for (const page of pages) {
+    const coordinateTableParts = detectCoordinateTableSpareParts({ page, manualNombre, archivoOrigen });
+
+    for (const sparePart of coordinateTableParts) {
+      addSparePartIfNew({ sparePart, spareParts, seen, seenCodePage });
+    }
+
+    if (coordinateTableParts.length) {
+      continue;
+    }
+
     page.lines.forEach((line, lineIndex) => {
       const detectedInLine = detectSparePartsInLine({
         line,
@@ -1021,6 +1166,15 @@ const printPageDebug = ({ pdfConfig, page, spareParts }) => {
     const tokens = line.tokens.map((token) => `${token.text} (x=${token.x}, y=${token.y}, orden=${token.order})`).join(' | ');
     console.log(`${index + 1}. ${tokens}`);
   });
+
+  console.log('\n[Filas candidatas tabulares por coordenadas]');
+  const coordinateCandidates = page.debugDetections.filter((detection) => detection.source === 'coordinate-table-header' || detection.source === 'coordinate-table-row');
+  if (!coordinateCandidates.length) {
+    console.log('(sin parser tabular activo; no se detectaron encabezados de tabla por columnas)');
+  }
+  for (const candidate of coordinateCandidates) {
+    console.log(JSON.stringify(candidate, null, 2));
+  }
 
   console.log('\n[Detecciones por línea]');
   if (!page.debugDetections.length) {
