@@ -6190,3 +6190,82 @@ h1 {
     justify-content: center;
   }
 }
+
+.admin-visual-assisted-progress {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(33, 83, 45, 0.16);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(33, 83, 45, 0.08);
+}
+
+.admin-visual-assisted-progress > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #17251b;
+  font-weight: 800;
+}
+
+.admin-visual-assisted-progress progress {
+  width: 100%;
+  height: 0.9rem;
+  accent-color: #21532d;
+}
+
+.admin-visual-reference-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-height: 9rem;
+  overflow: auto;
+}
+
+.admin-visual-reference-list button {
+  border: 1px solid rgba(33, 83, 45, 0.18);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: #fff;
+  color: #21532d;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.admin-visual-reference-list button.is-used {
+  background: rgba(33, 83, 45, 0.1);
+  color: #21532d;
+}
+
+.admin-visual-assisted-detail {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border-radius: 14px;
+  background: rgba(33, 83, 45, 0.08);
+  color: #17251b;
+}
+
+.admin-visual-assisted-detail p {
+  margin: 0;
+}
+
+.visual-panel__marker--loaded {
+  background: #16a34a;
+  box-shadow: 0 10px 22px rgba(22, 101, 52, 0.34), 0 0 0 4px rgba(22, 163, 74, 0.18);
+}
+
+.visual-panel__marker--loaded:hover,
+.visual-panel__marker--loaded:focus-visible {
+  background: #15803d;
+  box-shadow: 0 14px 30px rgba(22, 101, 52, 0.38), 0 0 0 6px rgba(22, 163, 74, 0.24);
+}
+
+.admin-visual-marker--new,
+.visual-panel__marker--draft.admin-visual-marker--new {
+  background: #dc2626;
+  box-shadow: 0 10px 22px rgba(127, 29, 29, 0.34), 0 0 0 4px rgba(220, 38, 38, 0.18);
+}
