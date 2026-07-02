@@ -471,25 +471,29 @@ h1 {
   height: 88px;
   place-items: center;
   border-radius: 999px;
-  color: #242424;
-  font-size: 0;
+  background: #ffffff;
+  color: #161616;
+  font-size: 2.9rem;
   font-weight: 900;
   filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.18));
 }
 
-.product-card__image span::before {
+.product-card__image svg {
+  width: 58px;
+  height: 58px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.product-card--repuestos .product-card__image svg {
+  color: var(--color-primary-dark);
+}
+
+.product-card--maquinarias .product-card__image svg {
   color: #161616;
-  font-size: 4rem;
-  line-height: 1;
-}
-
-.product-card--repuestos .product-card__image span::before {
-  content: '◎';
-}
-
-.product-card--maquinarias .product-card__image span::before {
-  content: '🚜';
-  font-size: 3.4rem;
 }
 
 .product-card__body {
@@ -5320,17 +5324,35 @@ h1 {
 
 .login-access-request {
   display: grid;
-  justify-items: start;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
   margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid var(--color-border);
+  padding: 18px;
+  border: 1px solid rgba(139, 29, 29, 0.14);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(139, 29, 29, 0.06), rgba(255, 255, 255, 0.86));
 }
 
 .login-access-request p {
   margin: 0;
-  color: var(--color-text);
+  color: var(--color-heading);
   font-weight: 850;
+}
+
+.login-access-request .button {
+  justify-self: end;
+  min-width: 174px;
+  border-color: var(--color-primary);
+  background: #ffffff;
+  color: var(--color-primary-dark);
+  box-shadow: 0 10px 22px rgba(139, 29, 29, 0.12);
+}
+
+.login-access-request .button:hover,
+.login-access-request .button:focus-visible {
+  background: var(--color-primary);
+  color: #ffffff;
 }
 
 .catalog-access-required {
@@ -6048,11 +6070,7 @@ h1 {
 }
 
 .login-card--compact .login-access-request {
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 16px;
   margin-top: 0;
-  padding-top: 20px;
 }
 
 .admin-access-denied {
