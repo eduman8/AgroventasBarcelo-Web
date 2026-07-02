@@ -51,7 +51,6 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [manualPointData, setManualPointData] = useState(emptyManualPointData);
   const referenceInputRef = useRef(null);
   const imageWrapRef = useRef(null);
-  const [zoom, setZoom] = useState(1);
 
   const selectedPoint = (panel?.puntos || []).find((point) => point.id === editingId) || null;
 
@@ -339,15 +338,9 @@ function AdminVisualSparePartsPage({ currentPath }) {
                   <p className="admin-topbar__eyebrow">Imagen del despiece</p>
                   <h2 id="admin-visual-canvas-title">Página {pagina || '-'}</h2>
                 </div>
-                <div className="visual-panel__toolbar admin-visual-zoom" aria-label="Controles de zoom">
-                  <button type="button" onClick={() => setZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}>−</button>
-                  <span>{Math.round(zoom * 100)}%</span>
-                  <button type="button" onClick={() => setZoom((value) => Math.min(1.8, Number((value + 0.1).toFixed(2))))}>+</button>
-                  <button type="button" onClick={() => setZoom(1)}>Reset</button>
-                </div>
               </div>
               <div className="admin-visual-image-viewport">
-                <div ref={imageWrapRef} className={`visual-panel__image-stage admin-visual-image-stage${moveMode ? ' visual-panel__image-wrap--dragging' : ''}`} onClick={handleImageClick} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} role="button" tabIndex="0" style={{ transform: `scale(${zoom})` }}>
+                <div ref={imageWrapRef} className={`visual-panel__image-stage admin-visual-image-stage${moveMode ? ' visual-panel__image-wrap--dragging' : ''}`} onClick={handleImageClick} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} role="button" tabIndex="0">
                   {panel?.imageUrl ? <img src={`${apiUrl}${panel.imageUrl}`} alt={`Manual ${manualNombre} página ${pagina}`} draggable="false" /> : <p className="status-message manual-spare-parts-empty">No hay imagen cargada para esta página.</p>}
                   {(panel?.puntos || []).map((point) => <button type="button" key={point.id} className={`visual-panel__marker${editingId === point.id ? ' visual-panel__marker--selected' : ''}`} onPointerDown={(event) => handleMarkerPointerDown(event, point)} style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%` }}>{point.referenciaDespiece}</button>)}
                   {coords && !editingId ? <span className="visual-panel__marker visual-panel__marker--draft" style={{ left: `${coords.xPercent}%`, top: `${coords.yPercent}%` }}>+</span> : null}
