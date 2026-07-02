@@ -50,6 +50,8 @@ const debugAssistedReferences = ({ rawReferences = [], normalizedReferences = []
   });
 };
 const clampPercent = (value) => Math.min(Math.max(Number(value), 0), 100);
+const emptyManualReference = { referenciaDespiece: '', codigo: '', descripcion: '' };
+
 const emptyManualPointData = {
   codigoManual: '',
   descripcionManual: '',
@@ -95,6 +97,8 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [selectedManualLink, setSelectedManualLink] = useState(null);
   const [manualLinkStatus, setManualLinkStatus] = useState('');
   const [manualPointData, setManualPointData] = useState(emptyManualPointData);
+  const [manualReferenceOpen, setManualReferenceOpen] = useState(false);
+  const [manualReferenceDraft, setManualReferenceDraft] = useState(emptyManualReference);
   const [continuousMode, setContinuousMode] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(null);
   const referenceInputRef = useRef(null);
@@ -136,6 +140,8 @@ function AdminVisualSparePartsPage({ currentPath }) {
     setManualLinkResults([]);
     setManualLinkStatus('');
     setManualPointData(emptyManualPointData);
+    setManualReferenceOpen(false);
+    setManualReferenceDraft(emptyManualReference);
   }, []);
 
   const selectPoint = useCallback((point, message = '') => {
@@ -401,6 +407,22 @@ function AdminVisualSparePartsPage({ currentPath }) {
 
   const handleManualPointDataChange = (field) => (event) => setManualPointData((current) => ({ ...current, [field]: event.target.value }));
 
+  const handleManualReferenceDraftChange = (field) => (event) => setManualReferenceDraft((current) => ({ ...current, [field]: event.target.value }));
+
+  const applyManualReferenceFallback = () => {
+    const reference = normalizeReferenceValue(manualReferenceDraft.referenciaDespiece);
+    if (!reference) { setStatus('Ingresá la referencia manual excepcional.'); return; }
+    setReferenciaDespiece(reference);
+    setSelectedManualLink(null);
+    setManualPointData((current) => ({
+      ...current,
+      codigoManual: manualReferenceDraft.codigo.trim(),
+      descripcionManual: manualReferenceDraft.descripcion.trim()
+    }));
+    setManualReferenceOpen(false);
+    setStatus(`Referencia manual ${reference} agregada como fallback. Guardá el punto para usarla.`);
+  };
+
   const clearManualPointData = () => setManualPointData(emptyManualPointData);
 
   const hasManualPointData = Object.values(manualPointData).some((value) => String(value || '').trim());
@@ -466,7 +488,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
         {status ? <p className="status-message">{status}</p> : null}
 
         {panel ? <section className="admin-visual-assisted-progress" aria-label="Resumen de carga continua">
-          <div className="admin-visual-progress-card__header"><div><p className="admin-topbar__eyebrow">Resumen de página</p><strong>Página {pagina || '-'}</strong></div><span>{progressPercent}%</span></div>
+          <div className="admin-visual-progress-card__header"><div><p className="admin-topbar__eyebrow">Resumen de página</p><strong>Página visual: {panel?.paginaVisual || pagina || '-'} · Página de datos: {dataPageLabel}</strong></div><span>{progressPercent}%</span></div>
           <div className="admin-visual-progress-stats"><span>Total referencias:<strong>{totalReferences}</strong></span><span>Cargadas:<strong>{loadedReferences}</strong></span><span>Pendientes:<strong>{pendingReferences}</strong></span><span>Progreso:<strong>{progressPercent}%</strong></span></div>
           <progress max="100" value={progressPercent}>{progressPercent}%</progress>
           {totalReferences > 0 && pendingReferences === 0 ? <div className="admin-visual-completed"><strong>✅ Página completada</strong><span>{loadedReferences} / {totalReferences} referencias</span><button type="button" className="button" onClick={() => goToPage(1)}>Ir a la siguiente página</button></div> : null}
@@ -478,7 +500,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
               <div className="admin-visual-card__header">
                 <div>
                   <p className="admin-topbar__eyebrow">Imagen del despiece</p>
-                  <h2 id="admin-visual-canvas-title">Página {pagina || '-'}</h2>
+                  <h2 id="admin-visual-canvas-title">Página visual {panel?.paginaVisual || pagina || '-'}</h2><p className="admin-visual-selection">Página de datos: {dataPageLabel}</p>
                 </div>
               </div>
               <div className="admin-visual-image-viewport">
@@ -504,7 +526,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
           </div>
 
           <aside className="admin-visual-editor-panel" aria-label="Editor del punto seleccionado">
-            <section className="admin-visual-card admin-visual-reference-panel"><div className="admin-visual-card__header"><h3>Referencias · Página {pagina || '-'}</h3></div><div className="admin-visual-reference-list">{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); const current = normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece); return <button type="button" key={part.id} className={`${used ? 'is-used' : 'is-pending'}${current ? ' is-current' : ''}`} onClick={() => applyAssistedReference(part.referenciaDespiece)}>{current ? '▶' : used ? '✔' : '○'} {part.referenciaDespiece}</button>; })}</div></section>
+            <section className="admin-visual-card admin-visual-reference-panel"><div className="admin-visual-card__header"><h3>Referencias · Datos pág. {dataPageLabel}</h3></div><div className="admin-visual-reference-list">{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); const current = normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece); return <button type="button" key={part.id} className={`${used ? 'is-used' : 'is-pending'}${current ? ' is-current' : ''}`} onClick={() => applyAssistedReference(part.referenciaDespiece)}>{current ? '▶' : used ? '✔' : '○'} {part.referenciaDespiece}</button>; })}</div></section>
             <form className="admin-visual-editor-form" onSubmit={handleSubmit}>
               <section className="admin-visual-card admin-visual-editor-heading">
                 {editingId || coords ? <>
@@ -520,11 +542,13 @@ function AdminVisualSparePartsPage({ currentPath }) {
               <section className="admin-visual-card">
                 <div className="admin-visual-card__header"><h3>{referenciaDespiece ? `Referencia ${referenciaDespiece}` : 'Datos básicos del punto'}</h3></div>
                 <div className="admin-visual-fields-grid">
-                  <label>Referencia<select ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => applyAssistedReference(event.target.value)}><option value="">Seleccionar referencia</option>{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); return <option key={part.id} value={part.referenciaDespiece} disabled={used && normalizeDuplicateValue(part.referenciaDespiece) !== normalizeDuplicateValue(referenciaDespiece)}>{used ? '✔' : '○'} {part.referenciaDespiece}</option>; })}</select></label>
+                  <label>Referencia<select ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => applyAssistedReference(event.target.value)}><option value="">Seleccionar referencia</option>{referenciaDespiece && !availableReferences.some((part) => normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece)) ? <option value={referenciaDespiece}>Manual: {referenciaDespiece}</option> : null}{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); return <option key={part.id} value={part.referenciaDespiece} disabled={used && normalizeDuplicateValue(part.referenciaDespiece) !== normalizeDuplicateValue(referenciaDespiece)}>{used ? '✔' : '○'} {part.referenciaDespiece}</option>; })}</select></label>
                   <label>Posición X<input value={coords?.xPercent ?? ''} readOnly placeholder="Sin capturar" /></label>
                   <label>Posición Y<input value={coords?.yPercent ?? ''} readOnly placeholder="Sin capturar" /></label>
                 </div>
                 <div className="admin-visual-assisted-detail"><p><strong>Código:</strong> {selectedReferencePart?.codigo || selectedManualLink?.codigo || '-'}</p><p><strong>Descripción:</strong> {selectedReferencePart?.descripcion || selectedManualLink?.descripcion || '-'}</p></div>
+                <div className="admin-visual-actions"><button className="button button--secondary" type="button" onClick={() => setManualReferenceOpen((value) => !value)}>Agregar referencia manual</button></div>
+                {manualReferenceOpen ? <div className="admin-visual-fields-grid"><label>Referencia manual<input value={manualReferenceDraft.referenciaDespiece} onChange={handleManualReferenceDraftChange('referenciaDespiece')} placeholder="Ej.: 1" /></label><label>Código<input value={manualReferenceDraft.codigo} onChange={handleManualReferenceDraftChange('codigo')} placeholder="Ej.: P1131" /></label><label>Descripción<input value={manualReferenceDraft.descripcion} onChange={handleManualReferenceDraftChange('descripcion')} placeholder="Descripción excepcional" /></label><button className="button button--secondary" type="button" onClick={applyManualReferenceFallback}>Usar fallback manual</button></div> : null}
                 <p className="admin-visual-selection">Estado: {coords ? 'posición capturada' : 'sin capturar'}</p>
                 <div className="admin-visual-actions">
                   <button className="button button--secondary" type="button" onClick={() => selectAdjacentReference(-1)}>Referencia anterior</button>

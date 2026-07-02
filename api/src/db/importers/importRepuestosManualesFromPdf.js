@@ -555,6 +555,31 @@ const addSparePartIfNew = ({ sparePart, spareParts, seen, seenCodePage }) => {
   return true;
 };
 
+
+const inferMissingReferencesSafely = (spareParts) => {
+  const pages = new Map();
+  for (const part of spareParts) {
+    const key = `${part.manualNombre}|${part.archivoOrigen}|${part.pagina}`;
+    if (!pages.has(key)) pages.set(key, []);
+    pages.get(key).push(part);
+  }
+
+  for (const pageParts of pages.values()) {
+    const firstReferencedIndex = pageParts.findIndex((part) => /^\d+$/.test(String(part.referenciaDespiece ?? '').trim()));
+    if (firstReferencedIndex <= 0) continue;
+
+    const nullPrefix = pageParts.slice(0, firstReferencedIndex).filter((part) => !String(part.referenciaDespiece ?? '').trim());
+    const firstReference = Number.parseInt(pageParts[firstReferencedIndex].referenciaDespiece, 10);
+
+    if (Number.isInteger(firstReference) && firstReference === 2 && nullPrefix.length === 1) {
+      nullPrefix[0].referenciaDespiece = '1';
+      nullPrefix[0].referenciaInferida = 'prefix-sequence-before-2';
+    }
+  }
+
+  return spareParts;
+};
+
 const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
   const spareParts = [];
   const seen = new Set();
@@ -591,7 +616,7 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
     });
   }
 
-  return spareParts;
+  return inferMissingReferencesSafely(spareParts);
 };
 
 const insertSparePartIfMissing = async (pool, sparePart) => {

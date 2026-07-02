@@ -506,10 +506,10 @@ ORDER BY Id;`);
   return duplicate.recordset?.[0] ?? null;
 };
 
-const findManualPartForPoint = async (pool, { manualNombre, pagina, referenciaDespiece }) => {
+const findManualPartForPoint = async (pool, { manualNombre, pagina, paginaDatos = null, referenciaDespiece }) => {
   const result = await pool.request()
     .input('manualNombre', sql.NVarChar(200), manualNombre)
-    .input('pagina', sql.Int, pagina)
+    .input('pagina', sql.Int, normalizePage(paginaDatos) ?? normalizePage(pagina))
     .input('referenciaDespiece', sql.NVarChar(150), referenciaDespiece)
     .query(`
 SELECT TOP (1) Id AS id, Codigo AS codigo, Descripcion AS descripcion, ArchivoOrigen AS archivoOrigen, PaginaImpresa AS paginaImpresa
@@ -531,12 +531,14 @@ const normalizeRepuestoManualId = (value) => {
 export const createVisualPoint = async ({ manualNombre, archivoOrigen = '', pagina, paginaImpresa = null, referenciaDespiece, xPercent, yPercent, activo = true, repuestoManualId = null, codigoManual = '', descripcionManual = '', categoriaManual = '', marcaManual = '', modeloManual = '', observacionManual = '' }) => {
   const pool = await getSqlPool(); await ensureVisualPointsTable(pool);
   const manual = normalizeManualName(manualNombre); const page = normalizePage(pagina); const reference = normalizeReference(referenciaDespiece);
+  const dataPageConfig = manual && page ? await getVisualDataPageConfig({ manualNombre: manual, pagina: page }) : null;
+  const dataPage = dataPageConfig?.paginaDatos ?? page;
   const x = normalizePercent(xPercent); const y = normalizePercent(yPercent); let manualPartId = normalizeRepuestoManualId(repuestoManualId);
   const fileName = normalizeManualField(archivoOrigen, 255); const printedPage = normalizePage(paginaImpresa);
   const custom = { codigoManual: normalizeManualField(codigoManual, 100), descripcionManual: normalizeManualField(descripcionManual, 500), categoriaManual: normalizeManualField(categoriaManual, 200), marcaManual: normalizeManualField(marcaManual, 200), modeloManual: normalizeManualField(modeloManual, 200), observacionManual: normalizeManualField(observacionManual, 1000) };
   if (!manual || !page || !reference || x === null || y === null) throw new Error('Datos inválidos para crear el punto visual. Verificá manual, página, referencia y coordenadas entre 0 y 100.');
   if (!manualPartId) {
-    const matchedPart = await findManualPartForPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
+    const matchedPart = await findManualPartForPoint(pool, { manualNombre: manual, pagina: page, paginaDatos: dataPage, referenciaDespiece: reference });
     manualPartId = matchedPart?.id ?? null;
   }
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
@@ -555,12 +557,15 @@ VALUES (@manualNombre, @archivoOrigen, @pagina, @paginaImpresa, @referenciaDespi
 
 export const updateVisualPoint = async (id, data) => {
   const pool = await getSqlPool(); await ensureVisualPointsTable(pool);
-  const pointId = Number.parseInt(id, 10); const manual = normalizeManualName(data.manualNombre); const page = normalizePage(data.pagina); const reference = normalizeReference(data.referenciaDespiece); const x = normalizePercent(data.xPercent); const y = normalizePercent(data.yPercent); let manualPartId = normalizeRepuestoManualId(data.repuestoManualId);
+  const pointId = Number.parseInt(id, 10); const manual = normalizeManualName(data.manualNombre); const page = normalizePage(data.pagina); const reference = normalizeReference(data.referenciaDespiece);
+  const dataPageConfig = manual && page ? await getVisualDataPageConfig({ manualNombre: manual, pagina: page }) : null;
+  const dataPage = dataPageConfig?.paginaDatos ?? page;
+  const x = normalizePercent(data.xPercent); const y = normalizePercent(data.yPercent); let manualPartId = normalizeRepuestoManualId(data.repuestoManualId);
   const fileName = normalizeManualField(data.archivoOrigen, 255); const printedPage = normalizePage(data.paginaImpresa);
   const custom = { codigoManual: normalizeManualField(data.codigoManual, 100), descripcionManual: normalizeManualField(data.descripcionManual, 500), categoriaManual: normalizeManualField(data.categoriaManual, 200), marcaManual: normalizeManualField(data.marcaManual, 200), modeloManual: normalizeManualField(data.modeloManual, 200), observacionManual: normalizeManualField(data.observacionManual, 1000) };
   if (!pointId || !manual || !page || !reference || x === null || y === null) throw new Error('Datos inválidos para actualizar el punto visual. Verificá manual, página, referencia y coordenadas entre 0 y 100.');
   if (!manualPartId) {
-    const matchedPart = await findManualPartForPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
+    const matchedPart = await findManualPartForPoint(pool, { manualNombre: manual, pagina: page, paginaDatos: dataPage, referenciaDespiece: reference });
     manualPartId = matchedPart?.id ?? null;
   }
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference, excludeId: pointId });
