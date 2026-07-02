@@ -51,6 +51,23 @@ const debugAssistedReferences = ({ rawReferences = [], normalizedReferences = []
 };
 const clampPercent = (value) => Math.min(Math.max(Number(value), 0), 100);
 const emptyManualReference = { referenciaDespiece: '', codigo: '', descripcion: '' };
+const adminManualRefsEndpoint = `${apiUrl}/api/admin/repuestos-visuales/repuestos-manuales`;
+const buildAdminManualRefsParams = ({ manualNombre = '', visualPage = '', paginaDatos = '', dataPage = '', search = '' } = {}) => new URLSearchParams({
+  manualNombre: String(manualNombre).trim(),
+  pagina: String(visualPage).trim(),
+  page: String(visualPage).trim(),
+  paginaDatos: String(paginaDatos || dataPage).trim(),
+  dataPage: String(dataPage || paginaDatos).trim(),
+  search: String(search).trim()
+});
+const buildReferenceDiagnostic = ({ manualNombre = '', visualPage = '', dataPage = '', endpoint = adminManualRefsEndpoint, queryParams = '', receivedCount = 0 } = {}) => ({
+  manualNombre,
+  visualPage: visualPage || '-',
+  dataPage: dataPage || '-',
+  endpoint,
+  queryParams,
+  receivedCount
+});
 
 const emptyManualPointData = {
   codigoManual: '',
@@ -99,6 +116,8 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [manualPointData, setManualPointData] = useState(emptyManualPointData);
   const [manualReferenceOpen, setManualReferenceOpen] = useState(false);
   const [manualReferenceDraft, setManualReferenceDraft] = useState(emptyManualReference);
+  const [referenceDiagnostic, setReferenceDiagnostic] = useState(null);
+  const [referenceDiagnosticOpen, setReferenceDiagnosticOpen] = useState(false);
   const [continuousMode, setContinuousMode] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(null);
   const referenceInputRef = useRef(null);
@@ -112,10 +131,17 @@ function AdminVisualSparePartsPage({ currentPath }) {
     try {
       const nextPanel = await getAdminVisualPoints({ manualNombre, pagina });
       setPanel(nextPanel);
-      const refs = await searchAdminVisualManualSpareParts({ manualNombre, paginaDatos: nextPanel.paginaDatos || pagina, search: '' });
-      const normalizedRefs = normalizeAssistedReferences(refs.data || []);
+      const dataPage = nextPanel.paginaDatos || pagina;
+      const refsParams = buildAdminManualRefsParams({ manualNombre, visualPage: pagina, paginaDatos: dataPage, dataPage, search: '' });
+      if (import.meta.env.DEV) console.debug('[admin-visual-manual-references-request]', { endpoint: adminManualRefsEndpoint, manualNombre, visualPage: pagina, dataPage, paginaDatos: dataPage, queryParams: refsParams.toString() });
+      const refs = await searchAdminVisualManualSpareParts({ manualNombre, pagina: pagina, page: pagina, paginaDatos: dataPage, dataPage, search: '' });
+      const rawRefs = refs.data || [];
+      const normalizedRefs = normalizeAssistedReferences(rawRefs);
+      const usedReferences = new Set((nextPanel.puntos || []).map((point) => normalizeDuplicateValue(point.referenciaDespiece)));
       setAssistedReferences(normalizedRefs);
-      debugAssistedReferences({ rawReferences: refs.data || [], normalizedReferences: normalizedRefs, usedReferences: new Set((nextPanel.puntos || []).map((point) => normalizeDuplicateValue(point.referenciaDespiece))) });
+      setReferenceDiagnostic(buildReferenceDiagnostic({ manualNombre, visualPage: pagina, dataPage, endpoint: adminManualRefsEndpoint, queryParams: refsParams.toString(), receivedCount: rawRefs.length }));
+      debugAssistedReferences({ rawReferences: rawRefs, normalizedReferences: normalizedRefs, usedReferences });
+      if (import.meta.env.DEV) console.debug('[admin-visual-manual-references-response]', { rawResponse: refs, receivedCount: rawRefs.length, receivedReferences: rawRefs.map((part) => normalizeReferenceValue(part?.referenciaDespiece)), normalizedReferences: normalizedRefs.map((part) => part.referenciaDespiece), usedReferences: normalizedRefs.filter((part) => usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece), pendingReferences: normalizedRefs.filter((part) => !usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece) });
       setDataPageMode(nextPanel.dataPageConfig?.mode || 'same');
       setCustomDataPage(String(nextPanel.paginaDatos || pagina));
       setStatus('');
@@ -399,7 +425,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
     if (!manualNombre || !dataPage) { setManualLinkStatus('Cargá manual y página de datos antes de buscar.'); return; }
     setManualLinkStatus(manualLinkSearch.trim() ? 'Buscando repuestos en la página de datos y en el mismo manual...' : 'Buscando repuestos de la página de datos...');
     try {
-      const response = await searchAdminVisualManualSpareParts({ manualNombre, paginaDatos: dataPage, search: manualLinkSearch });
+      const response = await searchAdminVisualManualSpareParts({ manualNombre, pagina, page: pagina, paginaDatos: dataPage, dataPage, search: manualLinkSearch });
       setManualLinkResults(response.data || []);
       setManualLinkStatus((response.data || []).length ? `${(response.data || []).length} repuestos encontrados.` : (manualLinkSearch.trim() ? 'No se encontraron repuestos en este manual.' : 'No se encontraron repuestos en esa página.'));
     } catch (error) { setManualLinkStatus(error.message || 'No se pudieron buscar repuestos.'); }
@@ -492,6 +518,20 @@ function AdminVisualSparePartsPage({ currentPath }) {
           <div className="admin-visual-progress-stats"><span>Total referencias:<strong>{totalReferences}</strong></span><span>Cargadas:<strong>{loadedReferences}</strong></span><span>Pendientes:<strong>{pendingReferences}</strong></span><span>Progreso:<strong>{progressPercent}%</strong></span></div>
           <progress max="100" value={progressPercent}>{progressPercent}%</progress>
           {totalReferences > 0 && pendingReferences === 0 ? <div className="admin-visual-completed"><strong>✅ Página completada</strong><span>{loadedReferences} / {totalReferences} referencias</span><button type="button" className="button" onClick={() => goToPage(1)}>Ir a la siguiente página</button></div> : null}
+        </section> : null}
+
+
+        {panel && totalReferences === 0 ? <section className="admin-visual-card admin-visual-reference-diagnostic-card">
+          <p className="status-message manual-spare-parts-empty">No se encontraron referencias para Manual {referenceDiagnostic?.manualNombre || manualNombre} / Página de datos {referenceDiagnostic?.dataPage || dataPageLabel}</p>
+          <button type="button" className="button button--secondary" onClick={() => setReferenceDiagnosticOpen((value) => !value)}>Ver diagnóstico</button>
+          {referenceDiagnosticOpen ? <dl className="admin-visual-diagnostic-list">
+            <dt>Manual enviado</dt><dd>{referenceDiagnostic?.manualNombre || manualNombre}</dd>
+            <dt>Página visual</dt><dd>{referenceDiagnostic?.visualPage || pagina || '-'}</dd>
+            <dt>Página de datos</dt><dd>{referenceDiagnostic?.dataPage || dataPageLabel}</dd>
+            <dt>Cantidad recibida</dt><dd>{referenceDiagnostic?.receivedCount ?? 0}</dd>
+            <dt>Endpoint consultado</dt><dd>{referenceDiagnostic?.endpoint || adminManualRefsEndpoint}</dd>
+            <dt>Query params</dt><dd>{referenceDiagnostic?.queryParams || '-'}</dd>
+          </dl> : null}
         </section> : null}
 
         <div className="admin-visual-layout">
