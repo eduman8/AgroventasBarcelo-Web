@@ -650,16 +650,23 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
   return spareParts;
 };
 
-const insertSparePartIfMissing = async (pool, sparePart) => {
+const insertSparePartIfMissing = async (pool, sparePart, debugInsertFilters = getDebugInsertFilters()) => {
+  const sqlParameters = buildInsertSqlParameters(sparePart);
+  const debugThisInsert = shouldDebugInsert(sparePart, debugInsertFilters);
+
+  if (debugThisInsert) {
+    printInsertDiagnostic({ sparePart, sqlParameters, stage: 'antes de ejecutar SQL' });
+  }
+
   const result = await pool.request()
-    .input('ManualNombre', sql.NVarChar(200), sparePart.manualNombre)
-    .input('ArchivoOrigen', sql.NVarChar(500), sparePart.archivoOrigen)
-    .input('Pagina', sql.Int, sparePart.pagina)
-    .input('PaginaImpresa', sql.Int, sparePart.paginaImpresa)
-    .input('Codigo', sql.NVarChar(100), sparePart.codigo)
-    .input('Descripcion', sql.NVarChar(500), sparePart.descripcion)
-    .input('ReferenciaDespiece', sql.NVarChar(150), sparePart.referenciaDespiece)
-    .input('Categoria', sql.NVarChar(150), sparePart.categoria)
+    .input('ManualNombre', sql.NVarChar(200), sqlParameters.ManualNombre)
+    .input('ArchivoOrigen', sql.NVarChar(500), sqlParameters.ArchivoOrigen)
+    .input('Pagina', sql.Int, sqlParameters.Pagina)
+    .input('PaginaImpresa', sql.Int, sqlParameters.PaginaImpresa)
+    .input('Codigo', sql.NVarChar(100), sqlParameters.Codigo)
+    .input('Descripcion', sql.NVarChar(500), sqlParameters.Descripcion)
+    .input('ReferenciaDespiece', sql.NVarChar(150), sqlParameters.ReferenciaDespiece)
+    .input('Categoria', sql.NVarChar(150), sqlParameters.Categoria)
     .query(`
 IF EXISTS (
     SELECT 1
@@ -735,11 +742,24 @@ END;
 
   const counters = result.recordset?.[0] ?? { inserted: 0, duplicated: 0, updatedCategory: 0 };
 
-  return {
+  const normalizedCounters = {
     inserted: Number(counters.inserted) || 0,
     duplicated: Number(counters.duplicated) || 0,
     updatedCategory: Number(counters.updatedCategory) || 0
   };
+
+  if (debugThisInsert) {
+    const existingRows = await fetchExistingRowsForInsertDiagnostic(pool, sparePart);
+    printInsertDiagnostic({
+      sparePart,
+      sqlParameters,
+      stage: 'después de ejecutar SQL',
+      counters: normalizedCounters,
+      existingRows
+    });
+  }
+
+  return normalizedCounters;
 };
 
 export const buildImportPreview = async ({ manualNombre, archivoOrigen }) => {
@@ -769,6 +789,112 @@ const buildVisualVerification = ({ manualNombre, spareParts }) => visualVerifica
       };
     })
   }));
+
+
+const parseCsvOption = (value) => (value ?? '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const getDebugInsertFilters = () => ({
+  enabled: process.argv.includes('--debug-insert'),
+  referencias: parseCsvOption(getCliOption('debug-insert-reference')).map((value) => value.toLocaleUpperCase('es-AR')),
+  codigos: parseCsvOption(getCliOption('debug-insert-code')).map((value) => value.toLocaleUpperCase('es-AR'))
+});
+
+const shouldDebugInsert = (sparePart, filters = getDebugInsertFilters()) => {
+  if (!filters.enabled && !filters.referencias.length && !filters.codigos.length) {
+    return false;
+  }
+
+  const referencia = String(sparePart.referenciaDespiece ?? '').trim().toLocaleUpperCase('es-AR');
+  const codigo = String(sparePart.codigo ?? '').trim().toLocaleUpperCase('es-AR');
+
+  if (filters.referencias.length && !filters.referencias.includes(referencia)) {
+    return false;
+  }
+
+  if (filters.codigos.length && !filters.codigos.includes(codigo)) {
+    return false;
+  }
+
+  return true;
+};
+
+const buildInsertSqlParameters = (sparePart) => ({
+  ManualNombre: sparePart.manualNombre,
+  ArchivoOrigen: sparePart.archivoOrigen,
+  Pagina: sparePart.pagina,
+  PaginaImpresa: sparePart.paginaImpresa,
+  Codigo: sparePart.codigo,
+  Descripcion: sparePart.descripcion,
+  ReferenciaDespiece: sparePart.referenciaDespiece,
+  Categoria: sparePart.categoria
+});
+
+const printInsertDiagnostic = ({ sparePart, sqlParameters, stage, counters = null, existingRows = null }) => {
+  const parserObject = {
+    referenciaDespiece: sparePart.referenciaDespiece ?? null,
+    codigo: sparePart.codigo,
+    descripcion: sparePart.descripcion,
+    pagina: sparePart.pagina,
+    paginaImpresa: sparePart.paginaImpresa ?? null
+  };
+  const comparison = {
+    referenciaDespiece: Object.is(parserObject.referenciaDespiece, sqlParameters.ReferenciaDespiece ?? null) ? 'OK' : 'DIFERENTE',
+    codigo: Object.is(parserObject.codigo, sqlParameters.Codigo) ? 'OK' : 'DIFERENTE',
+    descripcion: Object.is(parserObject.descripcion, sqlParameters.Descripcion) ? 'OK' : 'DIFERENTE',
+    pagina: Object.is(parserObject.pagina, sqlParameters.Pagina) ? 'OK' : 'DIFERENTE',
+    paginaImpresa: Object.is(parserObject.paginaImpresa, sqlParameters.PaginaImpresa ?? null) ? 'OK' : 'DIFERENTE'
+  };
+
+  console.log(`\n[DEBUG INSERT RepuestosManuales] ${stage}`);
+  console.log('Objeto JavaScript inmediatamente antes del INSERT:');
+  console.log(JSON.stringify(parserObject, null, 2));
+  console.log('Parámetros enviados al INSERT SQL:');
+  console.log(JSON.stringify(sqlParameters, null, 2));
+  console.log('Comparación objeto JS vs parámetros SQL:');
+  console.log(JSON.stringify(comparison, null, 2));
+
+  if (counters) {
+    console.log('Resultado INSERT/duplicado:');
+    console.log(JSON.stringify(counters, null, 2));
+  }
+
+  if (existingRows) {
+    console.log('Registros existentes que coinciden por código/descripción/manual/página para revisar importaciones anteriores:');
+    console.log(JSON.stringify(existingRows, null, 2));
+  }
+};
+
+const fetchExistingRowsForInsertDiagnostic = async (pool, sparePart) => {
+  const result = await pool.request()
+    .input('ManualNombre', sql.NVarChar(200), sparePart.manualNombre)
+    .input('Pagina', sql.Int, sparePart.pagina)
+    .input('PaginaImpresa', sql.Int, sparePart.paginaImpresa)
+    .input('Codigo', sql.NVarChar(100), sparePart.codigo)
+    .input('Descripcion', sql.NVarChar(500), sparePart.descripcion)
+    .query(`
+SELECT TOP (20)
+    Id,
+    ManualNombre,
+    Pagina,
+    PaginaImpresa,
+    Codigo,
+    Descripcion,
+    ReferenciaDespiece,
+    CreatedAt,
+    UpdatedAt
+FROM dbo.RepuestosManuales
+WHERE Codigo = @Codigo
+  AND ManualNombre = @ManualNombre
+  AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
+  AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)))
+ORDER BY Id;
+`);
+
+  return result.recordset ?? [];
+};
 
 const getCliOption = (name) => {
   const prefix = `--${name}=`;
@@ -872,8 +998,10 @@ const importPdf = async ({ pool, manualNombre, archivoOrigen }) => {
     visualVerification: buildVisualVerification({ manualNombre, spareParts })
   };
 
+  const debugInsertFilters = getDebugInsertFilters();
+
   for (const sparePart of spareParts) {
-    const counters = await insertSparePartIfMissing(pool, sparePart);
+    const counters = await insertSparePartIfMissing(pool, sparePart, debugInsertFilters);
     summary.inserted += counters.inserted;
     summary.duplicated += counters.duplicated;
     summary.updatedExistingWithCategory += counters.updatedCategory;
