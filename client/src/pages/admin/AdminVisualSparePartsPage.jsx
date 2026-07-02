@@ -8,7 +8,47 @@ const manualOptions = [
   { label: 'Grano Fino 2019', value: 'Grano Fino 2019' }
 ];
 
-const normalizeDuplicateValue = (value) => String(value ?? '').trim().toUpperCase();
+const normalizeReferenceValue = (value) => String(value ?? '').trim();
+const normalizeDuplicateValue = (value) => normalizeReferenceValue(value).toUpperCase();
+const getReferenceSortParts = (value) => {
+  const text = normalizeReferenceValue(value);
+  return /^\d+$/.test(text)
+    ? { group: 0, number: Number.parseInt(text, 10), text }
+    : { group: 1, number: Number.POSITIVE_INFINITY, text: text.toLocaleUpperCase('es-AR') };
+};
+const compareReferencesNaturally = (left, right) => {
+  const a = getReferenceSortParts(left?.referenciaDespiece ?? left);
+  const b = getReferenceSortParts(right?.referenciaDespiece ?? right);
+  if (a.group !== b.group) return a.group - b.group;
+  if (a.number !== b.number) return a.number - b.number;
+  return a.text.localeCompare(b.text, 'es-AR', { numeric: true, sensitivity: 'base' });
+};
+const getAssistedReferenceScore = (part) => ['codigo', 'descripcion', 'categoria', 'marca', 'modelo', 'paginaImpresa']
+  .reduce((score, field) => score + (normalizeReferenceValue(part?.[field]) ? 1 : 0), 0);
+const normalizeAssistedReferences = (references = []) => {
+  const byReference = new Map();
+  for (const part of references || []) {
+    const reference = normalizeReferenceValue(part?.referenciaDespiece);
+    if (!reference) continue;
+    const normalizedPart = { ...part, referenciaDespiece: reference };
+    const key = normalizeDuplicateValue(reference);
+    const current = byReference.get(key);
+    if (!current || getAssistedReferenceScore(normalizedPart) > getAssistedReferenceScore(current)) byReference.set(key, normalizedPart);
+  }
+  return Array.from(byReference.values()).sort(compareReferencesNaturally);
+};
+const debugAssistedReferences = ({ rawReferences = [], normalizedReferences = [], usedReferences = new Set() }) => {
+  if (!import.meta.env.DEV) return;
+  const used = normalizedReferences.filter((part) => usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece);
+  const pending = normalizedReferences.filter((part) => !usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece);
+  console.debug('[admin-visual-assisted-references]', {
+    rawCount: rawReferences.length,
+    rawReferences: rawReferences.map((part) => normalizeReferenceValue(part?.referenciaDespiece)).filter(Boolean),
+    normalizedReferences: normalizedReferences.map((part) => part.referenciaDespiece),
+    usedReferences: used,
+    pendingReferences: pending
+  });
+};
 const clampPercent = (value) => Math.min(Math.max(Number(value), 0), 100);
 const emptyManualPointData = {
   codigoManual: '',
@@ -69,11 +109,13 @@ function AdminVisualSparePartsPage({ currentPath }) {
       const nextPanel = await getAdminVisualPoints({ manualNombre, pagina });
       setPanel(nextPanel);
       const refs = await searchAdminVisualManualSpareParts({ manualNombre, paginaDatos: nextPanel.paginaDatos || pagina, search: '' });
-      setAssistedReferences(refs.data || []);
+      const normalizedRefs = normalizeAssistedReferences(refs.data || []);
+      setAssistedReferences(normalizedRefs);
+      debugAssistedReferences({ rawReferences: refs.data || [], normalizedReferences: normalizedRefs, usedReferences: new Set((nextPanel.puntos || []).map((point) => normalizeDuplicateValue(point.referenciaDespiece))) });
       setDataPageMode(nextPanel.dataPageConfig?.mode || 'same');
       setCustomDataPage(String(nextPanel.paginaDatos || pagina));
       setStatus('');
-      if (continuousMode) window.requestAnimationFrame(() => selectFirstPendingReference(refs.data || [], nextPanel.puntos || []));
+      if (continuousMode) window.requestAnimationFrame(() => selectFirstPendingReference(normalizedRefs, nextPanel.puntos || []));
     } catch (error) {
       setStatus(error.message || 'No se pudieron cargar los puntos.');
     }
@@ -134,7 +176,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
       if (!current) return current;
       const exists = current.puntos.some((item) => item.id === point.id);
       const puntos = exists ? current.puntos.map((item) => (item.id === point.id ? { ...item, ...point } : item)) : [...current.puntos, point];
-      return { ...current, puntos: puntos.sort((a, b) => String(a.referenciaDespiece).localeCompare(String(b.referenciaDespiece), undefined, { numeric: true })) };
+      return { ...current, puntos: puntos.sort(compareReferencesNaturally) };
     });
   };
 
@@ -260,13 +302,13 @@ function AdminVisualSparePartsPage({ currentPath }) {
 
   const selectFirstPendingReference = (references = assistedReferences, puntos = panel?.puntos || []) => {
     const used = new Set((puntos || []).map((point) => normalizeDuplicateValue(point.referenciaDespiece)));
-    const next = (references || []).find((part) => part.referenciaDespiece && !used.has(normalizeDuplicateValue(part.referenciaDespiece)));
+    const next = (references || []).find((part) => normalizeReferenceValue(part.referenciaDespiece) && !used.has(normalizeDuplicateValue(part.referenciaDespiece)));
     if (next) applyAssistedReference(next.referenciaDespiece, false);
     return next || null;
   };
 
   const findPendingReferenceFrom = (reference, direction = 1, references = availableReferences, used = usedReferenceSet) => {
-    const pending = references.filter((part) => part.referenciaDespiece && !used.has(normalizeDuplicateValue(part.referenciaDespiece)));
+    const pending = references.filter((part) => normalizeReferenceValue(part.referenciaDespiece) && !used.has(normalizeDuplicateValue(part.referenciaDespiece)));
     if (!pending.length) return null;
     const currentAvailableIndex = references.findIndex((part) => normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(reference));
     const candidates = direction >= 0
@@ -291,7 +333,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const loadedReferences = assistedReferences.filter((part) => usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece))).length;
   const pendingReferences = Math.max(totalReferences - loadedReferences, 0);
   const progressPercent = totalReferences ? Math.round((loadedReferences / totalReferences) * 100) : 0;
-  const availableReferences = assistedReferences.filter((part) => part.referenciaDespiece);
+  const availableReferences = assistedReferences.filter((part) => normalizeReferenceValue(part.referenciaDespiece));
 
   const applyAssistedReference = (reference, announce = true) => {
     const part = assistedReferences.find((item) => normalizeDuplicateValue(item.referenciaDespiece) === normalizeDuplicateValue(reference));

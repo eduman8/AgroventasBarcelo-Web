@@ -29,6 +29,35 @@ const normalizePercent = (value) => {
   if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
   return percent;
 };
+
+const getReferenceSortParts = (value) => {
+  const text = normalizeReference(value);
+  const numericMatch = text.match(/^\d+$/);
+  if (numericMatch) return { group: 0, number: Number.parseInt(text, 10), text };
+  return { group: 1, number: Number.POSITIVE_INFINITY, text: text.toLocaleUpperCase('es-AR') };
+};
+const compareReferencesNaturally = (left, right) => {
+  const a = getReferenceSortParts(left?.referenciaDespiece ?? left);
+  const b = getReferenceSortParts(right?.referenciaDespiece ?? right);
+  if (a.group !== b.group) return a.group - b.group;
+  if (a.number !== b.number) return a.number - b.number;
+  return a.text.localeCompare(b.text, 'es-AR', { numeric: true, sensitivity: 'base' });
+};
+const completenessScore = (part) => ['codigo', 'descripcion', 'categoria', 'marca', 'modelo', 'paginaImpresa']
+  .reduce((score, field) => score + (String(part?.[field] ?? '').trim() ? 1 : 0), 0);
+const normalizeAssistedReferences = (parts = []) => {
+  const byReference = new Map();
+  for (const part of parts) {
+    const reference = normalizeReference(part?.referenciaDespiece);
+    if (!reference) continue;
+    const normalizedPart = { ...part, referenciaDespiece: reference };
+    const key = reference.toLocaleUpperCase('es-AR');
+    const current = byReference.get(key);
+    if (!current || completenessScore(normalizedPart) > completenessScore(current)) byReference.set(key, normalizedPart);
+  }
+  return Array.from(byReference.values()).sort(compareReferencesNaturally);
+};
+
 const getDisplayValue = (value, fallback = '') => (value === null || value === undefined || value === '' ? fallback : value);
 const normalizeManualField = (value, maxLength = 200) => {
   const normalized = String(value ?? '').trim().slice(0, maxLength);
@@ -565,7 +594,7 @@ export const searchManualSparePartsForVisualPage = async ({ manualNombre, pagina
     .input('paginaDatos', sql.Int, dataPage)
     .input('search', sql.NVarChar(152), likeSearch)
     .query(`
-SELECT TOP (500) rm.Id AS id, rm.Pagina AS pagina, ${printedPageSelect} AS paginaImpresa, rm.ReferenciaDespiece AS referenciaDespiece,
+SELECT rm.Id AS id, rm.Pagina AS pagina, ${printedPageSelect} AS paginaImpresa, rm.ReferenciaDespiece AS referenciaDespiece,
   rm.Codigo AS codigo, rm.Descripcion AS descripcion, rm.Categoria AS categoria, rm.Marca AS marca, ${modelSelect}
 FROM dbo.RepuestosManuales rm
 WHERE rm.Activo = 1
@@ -591,7 +620,8 @@ WHERE rm.Activo = 1
     )
   )
 ORDER BY CASE WHEN rm.Pagina = @paginaDatos THEN 0 ELSE 1 END, rm.Pagina, rm.Id;`);
-  return result.recordset ?? [];
+  const rawRows = result.recordset ?? [];
+  return normalizedSearch ? rawRows : normalizeAssistedReferences(rawRows);
 };
 
 export const deleteVisualPoint = async (id) => {
