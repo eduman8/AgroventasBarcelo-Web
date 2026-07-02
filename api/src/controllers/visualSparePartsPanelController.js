@@ -7,7 +7,7 @@ const handleError = (response, error, message, status = 500) => {
 
 export const getVisualSparePartsPanelController = async (request, response) => {
   try {
-    response.json(await getVisualSparePartsPanel({ manualNombre: request.query.manualNombre, pagina: request.query.pagina }));
+    response.json(await getVisualSparePartsPanel({ manualNombre: request.query.manualNombre || request.query.manual, pagina: request.query.pagina }));
   } catch (error) { handleError(response, error, 'No se pudo cargar el panel visual de repuestos.'); }
 };
 
@@ -54,4 +54,21 @@ export const searchAdminVisualManualSparePartsController = async (request, respo
   try {
     response.json({ data: await searchManualSparePartsForVisualPage({ manualNombre: request.query.manualNombre, paginaDatos: request.query.paginaDatos, search: request.query.search }) });
   } catch (error) { handleError(response, error, 'No se pudieron buscar repuestos manuales para vincular.'); }
+};
+
+
+export const getPublicManualPointsController = async (request, response) => {
+  try {
+    const panel = await getVisualSparePartsPanel({ manualNombre: request.query.manual || request.query.manualNombre, pagina: request.query.pagina });
+    response.json({
+      data: (panel.puntos || []).map((point) => ({
+        id: point.id,
+        referencia: point.referenciaDespiece,
+        codigo: point.codigo || '',
+        descripcion: point.descripcion || '',
+        xPercent: point.xPercent,
+        yPercent: point.yPercent
+      }))
+    });
+  } catch (error) { handleError(response, error, 'No se pudieron cargar los puntos públicos del manual.'); }
 };

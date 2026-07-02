@@ -115,7 +115,9 @@ BEGIN
     CREATE TABLE dbo.RepuestosManualesPuntosVisuales (
         Id INT IDENTITY(1,1) PRIMARY KEY,
         ManualNombre NVARCHAR(200) NOT NULL,
+        ArchivoOrigen NVARCHAR(255) NULL,
         Pagina INT NOT NULL,
+        PaginaImpresa INT NULL,
         ReferenciaDespiece NVARCHAR(150) NOT NULL,
         RepuestoManualId INT NULL,
         CodigoManual NVARCHAR(100) NULL,
@@ -130,6 +132,16 @@ BEGIN
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         UpdatedAt DATETIME2 NULL
     );
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'ArchivoOrigen') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD ArchivoOrigen NVARCHAR(255) NULL;
+END;
+
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'PaginaImpresa') IS NULL
+BEGIN
+    ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD PaginaImpresa INT NULL;
 END;
 
 IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'RepuestoManualId') IS NULL

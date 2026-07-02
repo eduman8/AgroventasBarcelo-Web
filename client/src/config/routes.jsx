@@ -26,6 +26,7 @@ export const routes = {
   '/admin/solicitudes-acceso': AdminAccessRequestsPage,
   '/admin/configuracion': AdminSettingsPage,
   '/admin/repuestos-visuales': AdminVisualSparePartsPage,
+  '/admin/manuales-puntos': AdminVisualSparePartsPage,
   '/repuestos': SparePartsPage,
   '/buscador-repuestos': VisualSparePartsSearchPage,
   '/buscador-visual-repuestos': VisualSparePartsSearchPage,

@@ -171,3 +171,10 @@ export async function applyAdminVisualDataPageOffset({ manualNombre = '', mode =
   if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudo aplicar el offset masivo.'));
   return response.json();
 }
+
+export async function getManualPoints({ manual = '', pagina = '' } = {}) {
+  const params = new URLSearchParams({ manual: String(manual).trim(), pagina: String(pagina).trim() });
+  const response = await fetch(`${apiUrl}/api/manual-puntos?${params.toString()}`);
+  if (!response.ok) throw new Error(await parseErrorMessage(response, 'No se pudieron cargar los puntos del manual.'));
+  return response.json();
+}

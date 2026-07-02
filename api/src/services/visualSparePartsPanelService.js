@@ -102,7 +102,9 @@ BEGIN
   CREATE TABLE dbo.RepuestosManualesPuntosVisuales (
     Id INT IDENTITY(1,1) PRIMARY KEY,
     ManualNombre NVARCHAR(200) NOT NULL,
+    ArchivoOrigen NVARCHAR(255) NULL,
     Pagina INT NOT NULL,
+    PaginaImpresa INT NULL,
     ReferenciaDespiece NVARCHAR(150) NOT NULL,
     RepuestoManualId INT NULL,
     CodigoManual NVARCHAR(100) NULL,
@@ -117,6 +119,14 @@ BEGIN
     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_RepuestosManualesPuntosVisuales_CreatedAt DEFAULT SYSUTCDATETIME(),
     UpdatedAt DATETIME2 NULL
   );
+END;
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'ArchivoOrigen') IS NULL
+BEGIN
+  ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD ArchivoOrigen NVARCHAR(255) NULL;
+END;
+IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'PaginaImpresa') IS NULL
+BEGIN
+  ALTER TABLE dbo.RepuestosManualesPuntosVisuales ADD PaginaImpresa INT NULL;
 END;
 IF COL_LENGTH(N'dbo.RepuestosManualesPuntosVisuales', N'RepuestoManualId') IS NULL
 BEGIN
@@ -164,7 +174,7 @@ const buildPanelQuery = ({ modelColumn }) => {
   const pointReferenceNormalized = buildNormalizedReferenceExpression('pv.ReferenciaDespiece');
 
   return `
-SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.Pagina AS pagina, pv.ReferenciaDespiece AS referenciaDespiece, pv.RepuestoManualId AS repuestoManualId,
+SELECT pv.Id AS id, pv.ManualNombre AS manualNombre, pv.ArchivoOrigen AS archivoOrigen, pv.Pagina AS pagina, pv.PaginaImpresa AS paginaImpresa, pv.ReferenciaDespiece AS referenciaDespiece, pv.RepuestoManualId AS repuestoManualId,
   CAST(pv.XPercent AS FLOAT) AS xPercent, CAST(pv.YPercent AS FLOAT) AS yPercent, pv.Activo AS activo,
   pv.CodigoManual AS codigoManual, pv.DescripcionManual AS descripcionManual, pv.CategoriaManual AS categoriaManual,
   pv.MarcaManual AS marcaManual, pv.ModeloManual AS modeloManual, pv.ObservacionManual AS observacionManual,
@@ -342,8 +352,8 @@ const mapPoint = (point) => ({
   referenciaDespiece: getDisplayValue(point.referenciaDespiece),
   xPercent: point.xPercent,
   yPercent: point.yPercent,
-  codigo: getDisplayValue(point.codigo, 'Sin código'),
-  descripcion: getDisplayValue(point.descripcion, 'Sin descripción'),
+  codigo: getDisplayValue(point.codigo),
+  descripcion: getDisplayValue(point.descripcion),
   categoria: getDisplayValue(point.categoria),
   marca: getDisplayValue(point.marca),
   modelo: getDisplayValue(point.modelo),
@@ -358,7 +368,9 @@ const mapPoint = (point) => ({
   repuestoCatalogoId: point.repuestoCatalogoId ?? null,
   matchSource: point.matchSource || 'none',
   manualNombre: point.manualNombre,
-  pagina: point.pagina
+  archivoOrigen: point.archivoOrigen || '',
+  pagina: point.pagina,
+  paginaImpresa: point.paginaImpresa ?? null
 });
 
 export const getVisualDataPageConfig = async ({ manualNombre, pagina }) => {
@@ -465,18 +477,39 @@ ORDER BY Id;`);
   return duplicate.recordset?.[0] ?? null;
 };
 
+const findManualPartForPoint = async (pool, { manualNombre, pagina, referenciaDespiece }) => {
+  const result = await pool.request()
+    .input('manualNombre', sql.NVarChar(200), manualNombre)
+    .input('pagina', sql.Int, pagina)
+    .input('referenciaDespiece', sql.NVarChar(150), referenciaDespiece)
+    .query(`
+SELECT TOP (1) Id AS id, Codigo AS codigo, Descripcion AS descripcion, ArchivoOrigen AS archivoOrigen, PaginaImpresa AS paginaImpresa
+FROM dbo.RepuestosManuales
+WHERE Activo = 1
+  AND LTRIM(RTRIM(ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  AND Pagina = @pagina
+  AND ${buildNormalizedReferenceExpression('ReferenciaDespiece')} = ${buildNormalizedReferenceExpression('@referenciaDespiece')}
+ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(COALESCE(ReferenciaDespiece, '')))) = UPPER(LTRIM(RTRIM(@referenciaDespiece))) THEN 0 ELSE 1 END, Id;`);
+  return result.recordset?.[0] ?? null;
+};
+
 const normalizeRepuestoManualId = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const id = Number.parseInt(value, 10);
   return Number.isInteger(id) && id > 0 ? id : null;
 };
 
-export const createVisualPoint = async ({ manualNombre, pagina, referenciaDespiece, xPercent, yPercent, activo = true, repuestoManualId = null, codigoManual = '', descripcionManual = '', categoriaManual = '', marcaManual = '', modeloManual = '', observacionManual = '' }) => {
+export const createVisualPoint = async ({ manualNombre, archivoOrigen = '', pagina, paginaImpresa = null, referenciaDespiece, xPercent, yPercent, activo = true, repuestoManualId = null, codigoManual = '', descripcionManual = '', categoriaManual = '', marcaManual = '', modeloManual = '', observacionManual = '' }) => {
   const pool = await getSqlPool(); await ensureVisualPointsTable(pool);
   const manual = normalizeManualName(manualNombre); const page = normalizePage(pagina); const reference = normalizeReference(referenciaDespiece);
-  const x = normalizePercent(xPercent); const y = normalizePercent(yPercent); const manualPartId = normalizeRepuestoManualId(repuestoManualId);
+  const x = normalizePercent(xPercent); const y = normalizePercent(yPercent); let manualPartId = normalizeRepuestoManualId(repuestoManualId);
+  const fileName = normalizeManualField(archivoOrigen, 255); const printedPage = normalizePage(paginaImpresa);
   const custom = { codigoManual: normalizeManualField(codigoManual, 100), descripcionManual: normalizeManualField(descripcionManual, 500), categoriaManual: normalizeManualField(categoriaManual, 200), marcaManual: normalizeManualField(marcaManual, 200), modeloManual: normalizeManualField(modeloManual, 200), observacionManual: normalizeManualField(observacionManual, 1000) };
   if (!manual || !page || !reference || x === null || y === null) throw new Error('Datos inválidos para crear el punto visual. Verificá manual, página, referencia y coordenadas entre 0 y 100.');
+  if (!manualPartId) {
+    const matchedPart = await findManualPartForPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
+    manualPartId = matchedPart?.id ?? null;
+  }
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
   if (duplicatePoint) {
     const error = new Error('Ya existe un punto visual activo para este manual, página y referencia. Seleccioná el existente para editarlo.');
@@ -484,18 +517,23 @@ export const createVisualPoint = async ({ manualNombre, pagina, referenciaDespie
     error.duplicatePoint = duplicatePoint;
     throw error;
   }
-  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, Boolean(activo)).input('repuestoManualId', sql.Int, manualPartId).input('codigoManual', sql.NVarChar(100), custom.codigoManual).input('descripcionManual', sql.NVarChar(500), custom.descripcionManual).input('categoriaManual', sql.NVarChar(200), custom.categoriaManual).input('marcaManual', sql.NVarChar(200), custom.marcaManual).input('modeloManual', sql.NVarChar(200), custom.modeloManual).input('observacionManual', sql.NVarChar(1000), custom.observacionManual).query(`
-INSERT INTO dbo.RepuestosManualesPuntosVisuales (ManualNombre, Pagina, ReferenciaDespiece, RepuestoManualId, CodigoManual, DescripcionManual, CategoriaManual, MarcaManual, ModeloManual, ObservacionManual, XPercent, YPercent, Activo)
-OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.Pagina AS pagina, INSERTED.ReferenciaDespiece AS referenciaDespiece, INSERTED.RepuestoManualId AS repuestoManualId, INSERTED.CodigoManual AS codigoManual, INSERTED.DescripcionManual AS descripcionManual, INSERTED.CategoriaManual AS categoriaManual, INSERTED.MarcaManual AS marcaManual, INSERTED.ModeloManual AS modeloManual, INSERTED.ObservacionManual AS observacionManual, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
-VALUES (@manualNombre, @pagina, @referenciaDespiece, @repuestoManualId, @codigoManual, @descripcionManual, @categoriaManual, @marcaManual, @modeloManual, @observacionManual, @xPercent, @yPercent, @activo);`);
+  const result = await pool.request().input('manualNombre', sql.NVarChar(200), manual).input('archivoOrigen', sql.NVarChar(255), fileName).input('pagina', sql.Int, page).input('paginaImpresa', sql.Int, printedPage).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, Boolean(activo)).input('repuestoManualId', sql.Int, manualPartId).input('codigoManual', sql.NVarChar(100), custom.codigoManual).input('descripcionManual', sql.NVarChar(500), custom.descripcionManual).input('categoriaManual', sql.NVarChar(200), custom.categoriaManual).input('marcaManual', sql.NVarChar(200), custom.marcaManual).input('modeloManual', sql.NVarChar(200), custom.modeloManual).input('observacionManual', sql.NVarChar(1000), custom.observacionManual).query(`
+INSERT INTO dbo.RepuestosManualesPuntosVisuales (ManualNombre, ArchivoOrigen, Pagina, PaginaImpresa, ReferenciaDespiece, RepuestoManualId, CodigoManual, DescripcionManual, CategoriaManual, MarcaManual, ModeloManual, ObservacionManual, XPercent, YPercent, Activo)
+OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.ArchivoOrigen AS archivoOrigen, INSERTED.Pagina AS pagina, INSERTED.PaginaImpresa AS paginaImpresa, INSERTED.ReferenciaDespiece AS referenciaDespiece, INSERTED.RepuestoManualId AS repuestoManualId, INSERTED.CodigoManual AS codigoManual, INSERTED.DescripcionManual AS descripcionManual, INSERTED.CategoriaManual AS categoriaManual, INSERTED.MarcaManual AS marcaManual, INSERTED.ModeloManual AS modeloManual, INSERTED.ObservacionManual AS observacionManual, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
+VALUES (@manualNombre, @archivoOrigen, @pagina, @paginaImpresa, @referenciaDespiece, @repuestoManualId, @codigoManual, @descripcionManual, @categoriaManual, @marcaManual, @modeloManual, @observacionManual, @xPercent, @yPercent, @activo);`);
   return result.recordset?.[0];
 };
 
 export const updateVisualPoint = async (id, data) => {
   const pool = await getSqlPool(); await ensureVisualPointsTable(pool);
-  const pointId = Number.parseInt(id, 10); const manual = normalizeManualName(data.manualNombre); const page = normalizePage(data.pagina); const reference = normalizeReference(data.referenciaDespiece); const x = normalizePercent(data.xPercent); const y = normalizePercent(data.yPercent); const manualPartId = normalizeRepuestoManualId(data.repuestoManualId);
+  const pointId = Number.parseInt(id, 10); const manual = normalizeManualName(data.manualNombre); const page = normalizePage(data.pagina); const reference = normalizeReference(data.referenciaDespiece); const x = normalizePercent(data.xPercent); const y = normalizePercent(data.yPercent); let manualPartId = normalizeRepuestoManualId(data.repuestoManualId);
+  const fileName = normalizeManualField(data.archivoOrigen, 255); const printedPage = normalizePage(data.paginaImpresa);
   const custom = { codigoManual: normalizeManualField(data.codigoManual, 100), descripcionManual: normalizeManualField(data.descripcionManual, 500), categoriaManual: normalizeManualField(data.categoriaManual, 200), marcaManual: normalizeManualField(data.marcaManual, 200), modeloManual: normalizeManualField(data.modeloManual, 200), observacionManual: normalizeManualField(data.observacionManual, 1000) };
   if (!pointId || !manual || !page || !reference || x === null || y === null) throw new Error('Datos inválidos para actualizar el punto visual. Verificá manual, página, referencia y coordenadas entre 0 y 100.');
+  if (!manualPartId) {
+    const matchedPart = await findManualPartForPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
+    manualPartId = matchedPart?.id ?? null;
+  }
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference, excludeId: pointId });
   if (duplicatePoint) {
     const error = new Error('Ya existe otro punto visual activo para este manual, página y referencia.');
@@ -503,9 +541,9 @@ export const updateVisualPoint = async (id, data) => {
     error.duplicatePoint = duplicatePoint;
     throw error;
   }
-  const result = await pool.request().input('id', sql.Int, pointId).input('manualNombre', sql.NVarChar(200), manual).input('pagina', sql.Int, page).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, data.activo !== false).input('repuestoManualId', sql.Int, manualPartId).input('codigoManual', sql.NVarChar(100), custom.codigoManual).input('descripcionManual', sql.NVarChar(500), custom.descripcionManual).input('categoriaManual', sql.NVarChar(200), custom.categoriaManual).input('marcaManual', sql.NVarChar(200), custom.marcaManual).input('modeloManual', sql.NVarChar(200), custom.modeloManual).input('observacionManual', sql.NVarChar(1000), custom.observacionManual).query(`
-UPDATE dbo.RepuestosManualesPuntosVisuales SET ManualNombre=@manualNombre, Pagina=@pagina, ReferenciaDespiece=@referenciaDespiece, RepuestoManualId=@repuestoManualId, CodigoManual=@codigoManual, DescripcionManual=@descripcionManual, CategoriaManual=@categoriaManual, MarcaManual=@marcaManual, ModeloManual=@modeloManual, ObservacionManual=@observacionManual, XPercent=@xPercent, YPercent=@yPercent, Activo=@activo, UpdatedAt=SYSUTCDATETIME()
-OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.Pagina AS pagina, INSERTED.ReferenciaDespiece AS referenciaDespiece, INSERTED.RepuestoManualId AS repuestoManualId, INSERTED.CodigoManual AS codigoManual, INSERTED.DescripcionManual AS descripcionManual, INSERTED.CategoriaManual AS categoriaManual, INSERTED.MarcaManual AS marcaManual, INSERTED.ModeloManual AS modeloManual, INSERTED.ObservacionManual AS observacionManual, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
+  const result = await pool.request().input('id', sql.Int, pointId).input('manualNombre', sql.NVarChar(200), manual).input('archivoOrigen', sql.NVarChar(255), fileName).input('pagina', sql.Int, page).input('paginaImpresa', sql.Int, printedPage).input('referenciaDespiece', sql.NVarChar(150), reference).input('xPercent', sql.Decimal(6,3), x).input('yPercent', sql.Decimal(6,3), y).input('activo', sql.Bit, data.activo !== false).input('repuestoManualId', sql.Int, manualPartId).input('codigoManual', sql.NVarChar(100), custom.codigoManual).input('descripcionManual', sql.NVarChar(500), custom.descripcionManual).input('categoriaManual', sql.NVarChar(200), custom.categoriaManual).input('marcaManual', sql.NVarChar(200), custom.marcaManual).input('modeloManual', sql.NVarChar(200), custom.modeloManual).input('observacionManual', sql.NVarChar(1000), custom.observacionManual).query(`
+UPDATE dbo.RepuestosManualesPuntosVisuales SET ManualNombre=@manualNombre, ArchivoOrigen=@archivoOrigen, Pagina=@pagina, PaginaImpresa=@paginaImpresa, ReferenciaDespiece=@referenciaDespiece, RepuestoManualId=@repuestoManualId, CodigoManual=@codigoManual, DescripcionManual=@descripcionManual, CategoriaManual=@categoriaManual, MarcaManual=@marcaManual, ModeloManual=@modeloManual, ObservacionManual=@observacionManual, XPercent=@xPercent, YPercent=@yPercent, Activo=@activo, UpdatedAt=SYSUTCDATETIME()
+OUTPUT INSERTED.Id AS id, INSERTED.ManualNombre AS manualNombre, INSERTED.ArchivoOrigen AS archivoOrigen, INSERTED.Pagina AS pagina, INSERTED.PaginaImpresa AS paginaImpresa, INSERTED.ReferenciaDespiece AS referenciaDespiece, INSERTED.RepuestoManualId AS repuestoManualId, INSERTED.CodigoManual AS codigoManual, INSERTED.DescripcionManual AS descripcionManual, INSERTED.CategoriaManual AS categoriaManual, INSERTED.MarcaManual AS marcaManual, INSERTED.ModeloManual AS modeloManual, INSERTED.ObservacionManual AS observacionManual, CAST(INSERTED.XPercent AS FLOAT) AS xPercent, CAST(INSERTED.YPercent AS FLOAT) AS yPercent, INSERTED.Activo AS activo
 WHERE Id=@id;`);
   return result.recordset?.[0] ?? null;
 };
