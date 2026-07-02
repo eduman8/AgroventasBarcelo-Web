@@ -97,6 +97,33 @@ const slugify = slugifyManualName;
 const isDevelopment = process.env.NODE_ENV !== 'production';
 const PANEL_DIAGNOSTIC_MANUAL = 'Repuestos Rastras';
 const PANEL_DIAGNOSTIC_PAGE = 6;
+const manualReferencesSql = `
+SELECT rm.Id AS id, rm.Pagina AS pagina, {printedPageSelect} AS paginaImpresa, rm.ReferenciaDespiece AS referenciaDespiece,
+  rm.Codigo AS codigo, rm.Descripcion AS descripcion, rm.Categoria AS categoria, rm.Marca AS marca, {modelSelect}
+FROM dbo.RepuestosManuales rm
+WHERE rm.Activo = 1
+  AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
+  AND (
+    (
+      rm.Pagina = @paginaDatos
+      AND (
+        @search = N'%%'
+        OR rm.Codigo LIKE @search
+        OR rm.Descripcion LIKE @search
+        OR rm.ReferenciaDespiece LIKE @search
+        OR rm.Categoria LIKE @search
+      )
+    )
+    OR (
+      @search <> N'%%'
+      AND rm.Pagina <> @paginaDatos
+      AND (
+        rm.Codigo LIKE @search
+        OR rm.Descripcion LIKE @search
+      )
+    )
+  )
+ORDER BY CASE WHEN rm.Pagina = @paginaDatos THEN 0 ELSE 1 END, rm.Pagina, rm.Id;`;
 
 
 const resolveImageUrl = (manualNombre, pagina) => {
@@ -582,50 +609,38 @@ WHERE Id=@id;`);
   return result.recordset?.[0] ?? null;
 };
 
-export const searchManualSparePartsForVisualPage = async ({ manualNombre, paginaDatos, search = '' }) => {
+export const searchManualSparePartsForVisualPage = async ({ manualNombre, pagina, paginaDatos, dataPage, search = '' }) => {
   const pool = await getSqlPool();
   await ensureVisualPointsTable(pool);
   const manual = normalizeManualName(manualNombre);
-  const dataPage = normalizePage(paginaDatos);
+  const visualPage = normalizePage(pagina);
+  const dataPageNumber = normalizePage(paginaDatos) ?? normalizePage(dataPage) ?? visualPage;
   const normalizedSearch = String(search ?? '').trim().slice(0, 150);
-  if (!manual || !dataPage) return [];
+  if (!manual || !dataPageNumber) return [];
 
   const likeSearch = `%${normalizedSearch}%`;
   const schema = await getRepuestosManualesSchema(pool);
   const modelSelect = buildRepuestosManualesModelSelect({ modelColumn: schema.modelColumn, tableAlias: 'rm', alias: 'modelo' });
   const printedPageSelect = schema.printedPageColumn ? `rm.${schema.printedPageColumn}` : 'NULL';
+  const query = manualReferencesSql.replace('{printedPageSelect}', printedPageSelect).replace('{modelSelect}', modelSelect);
+  if (isDevelopment) console.debug('[admin-visual-manual-references-sql]', {
+    manualRecibido: manualNombre,
+    paginaRecibida: pagina,
+    paginaDatosRecibida: paginaDatos,
+    dataPageRecibida: dataPage,
+    sqlParamsUsados: { manualNombre: manual, paginaDatos: dataPageNumber, search: likeSearch },
+    sql: query
+  });
   const result = await pool.request()
     .input('manualNombre', sql.NVarChar(200), manual)
-    .input('paginaDatos', sql.Int, dataPage)
+    .input('paginaDatos', sql.Int, dataPageNumber)
     .input('search', sql.NVarChar(152), likeSearch)
-    .query(`
-SELECT rm.Id AS id, rm.Pagina AS pagina, ${printedPageSelect} AS paginaImpresa, rm.ReferenciaDespiece AS referenciaDespiece,
-  rm.Codigo AS codigo, rm.Descripcion AS descripcion, rm.Categoria AS categoria, rm.Marca AS marca, ${modelSelect}
-FROM dbo.RepuestosManuales rm
-WHERE rm.Activo = 1
-  AND LTRIM(RTRIM(rm.ManualNombre)) = LTRIM(RTRIM(@manualNombre))
-  AND (
-    (
-      rm.Pagina = @paginaDatos
-      AND (
-        @search = N'%%'
-        OR rm.Codigo LIKE @search
-        OR rm.Descripcion LIKE @search
-        OR rm.ReferenciaDespiece LIKE @search
-        OR rm.Categoria LIKE @search
-      )
-    )
-    OR (
-      @search <> N'%%'
-      AND rm.Pagina <> @paginaDatos
-      AND (
-        rm.Codigo LIKE @search
-        OR rm.Descripcion LIKE @search
-      )
-    )
-  )
-ORDER BY CASE WHEN rm.Pagina = @paginaDatos THEN 0 ELSE 1 END, rm.Pagina, rm.Id;`);
+    .query(query);
   const rawRows = result.recordset ?? [];
+  if (isDevelopment) console.debug('[admin-visual-manual-references-rows]', {
+    cantidadFilasDevueltas: rawRows.length,
+    primeras20Filas: rawRows.slice(0, 20).map((row) => ({ ReferenciaDespiece: row.referenciaDespiece, Codigo: row.codigo, Descripcion: row.descripcion }))
+  });
   return normalizedSearch ? rawRows : normalizeAssistedReferences(rawRows);
 };
 

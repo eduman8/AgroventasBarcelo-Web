@@ -91,8 +91,10 @@ export async function getAdminVisualPoints({ manualNombre = '', pagina = '' } = 
   return response.json();
 }
 
-export async function searchAdminVisualManualSpareParts({ manualNombre = '', paginaDatos = '', search = '' } = {}) {
-  const params = new URLSearchParams({ manualNombre: String(manualNombre).trim(), paginaDatos: String(paginaDatos).trim(), search: String(search).trim() });
+export async function searchAdminVisualManualSpareParts({ manualNombre = '', pagina = '', page = '', paginaDatos = '', dataPage = '', search = '' } = {}) {
+  const visualPage = String(pagina || page).trim();
+  const resolvedDataPage = String(paginaDatos || dataPage).trim();
+  const params = new URLSearchParams({ manualNombre: String(manualNombre).trim(), pagina: visualPage, page: visualPage, paginaDatos: resolvedDataPage, dataPage: resolvedDataPage, search: String(search).trim() });
   const response = await fetch(`${apiUrl}/api/admin/repuestos-visuales/repuestos-manuales?${params.toString()}`, {
     headers: getAuthHeaders()
   });
