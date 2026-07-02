@@ -1,16 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 
-function getRedirectTarget(isAdmin) {
-  const params = new URLSearchParams(window.location.search);
-  const redirect = params.get('redirect');
-
-  if (isAdmin && redirect?.startsWith('/admin')) {
-    return redirect;
-  }
-
-  return isAdmin ? '/admin' : '/';
-}
+const loginRedirectTarget = '/';
 
 function navigateTo(path) {
   window.history.pushState({}, '', path);
@@ -19,17 +10,16 @@ function navigateTo(path) {
 }
 
 function LoginPage() {
-  const { isAdmin, isAuthenticated, signIn, user } = useAuth();
+  const { isAuthenticated, signIn, user } = useAuth();
   const [formValues, setFormValues] = useState({ email: '', password: '' });
   const [formStatus, setFormStatus] = useState('idle');
   const [notice, setNotice] = useState('');
-  const redirectTarget = useMemo(() => getRedirectTarget(isAdmin), [isAdmin]);
 
   useEffect(() => {
     if (isAuthenticated && formStatus !== 'sending') {
-      navigateTo(redirectTarget);
+      navigateTo(loginRedirectTarget);
     }
-  }, [formStatus, isAuthenticated, redirectTarget]);
+  }, [formStatus, isAuthenticated]);
 
   function handleFieldChange(event) {
     const { name, value } = event.target;
@@ -42,9 +32,8 @@ function LoginPage() {
     setNotice('');
 
     try {
-      const nextSession = await signIn(formValues);
-      const target = getRedirectTarget(String(nextSession?.rol ?? '').trim().toLowerCase() === 'admin');
-      navigateTo(target);
+      await signIn(formValues);
+      navigateTo(loginRedirectTarget);
     } catch (error) {
       setFormStatus('error');
       setNotice(error.message || 'No se pudo iniciar sesión.');
