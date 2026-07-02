@@ -34,6 +34,10 @@ const getDisplayValue = (value, fallback = 'Sin informar') => {
   return value;
 };
 
+const MIN_VISUAL_ZOOM = 0.6;
+const MAX_VISUAL_ZOOM = 1.8;
+const VISUAL_ZOOM_STEP = 0.15;
+
 const getManualPartKey = (sparePart) => `manual-${sparePart.id ?? `${sparePart.codigo}-${sparePart.manualNombre}`}`;
 const getManualSelectedPartId = (sparePart) => getManualPartKey(sparePart);
 
@@ -74,6 +78,7 @@ function VisualSparePartsSearchPage() {
   const { isAuthenticated, token } = useAuth();
   const [manual, setManual] = useState(manualOptions[0].value);
   const [pagina, setPagina] = useState('1');
+  const [goToPageValue, setGoToPageValue] = useState('1');
   const [elemento, setElemento] = useState('');
   const [submittedSearch, setSubmittedSearch] = useState(null);
   const [results, setResults] = useState([]);
@@ -97,7 +102,7 @@ function VisualSparePartsSearchPage() {
 
 
 
-  const clampZoom = useCallback((value) => Math.min(Math.max(value, 1), 3.5), []);
+  const clampZoom = useCallback((value) => Math.min(Math.max(Number(value) || 1, MIN_VISUAL_ZOOM), MAX_VISUAL_ZOOM), []);
 
   const updateZoom = useCallback((nextZoom, focalPoint) => {
     setZoom((currentZoom) => {
@@ -133,7 +138,7 @@ function VisualSparePartsSearchPage() {
   }, []);
 
   const focusPanelPoint = useCallback((point) => {
-    const targetZoom = 2.2;
+    const targetZoom = MAX_VISUAL_ZOOM;
     const viewport = viewportRef.current;
     if (viewport) {
       const bounds = viewport.getBoundingClientRect();
@@ -202,6 +207,14 @@ function VisualSparePartsSearchPage() {
   const currentPageNumber = Number.parseInt(pagina, 10) || 1;
   const isFirstPage = currentPageNumber <= 1;
   const isLastPage = Boolean(totalPages && currentPageNumber >= totalPages);
+  const isMinZoom = zoom <= MIN_VISUAL_ZOOM;
+  const isMaxZoom = zoom >= MAX_VISUAL_ZOOM;
+  const markerScale = Math.min(Math.max(1 / zoom, 0.72), 1.35);
+  const selectedPanelPointHasPart = Boolean(selectedPanelPoint && (selectedPanelPoint.codigo || selectedPanelPoint.descripcion || selectedPanelPoint.repuestoCatalogoId || selectedPanelPoint.disponibleEnCatalogo || selectedPanelPoint.matchSource === 'customManual'));
+
+  useEffect(() => {
+    setGoToPageValue(String(currentPageNumber));
+  }, [currentPageNumber]);
 
   const hasSubmittedSearch = Boolean(submittedSearch);
   useEffect(() => {
@@ -262,9 +275,14 @@ function VisualSparePartsSearchPage() {
     setSelectionNotice('');
   }, [totalPages]);
 
+  const submitGoToPage = useCallback(() => {
+    changePage(goToPageValue);
+  }, [changePage, goToPageValue]);
+
   const handleManualChange = (event) => {
     setManual(event.target.value);
     setPagina('1');
+    setGoToPageValue('1');
     setElemento('');
     setSubmittedSearch(null);
     setResults([]);
@@ -274,7 +292,16 @@ function VisualSparePartsSearchPage() {
   };
 
   const handlePageInputChange = (event) => {
-    changePage(event.target.value);
+    const nextValue = event.target.value;
+    setPagina(nextValue);
+    setGoToPageValue(nextValue);
+  };
+
+  const handleGoToPageKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitGoToPage();
+    }
   };
 
   const goToPreviousPage = () => changePage(currentPageNumber - 1);
@@ -421,23 +448,6 @@ function VisualSparePartsSearchPage() {
           <button type="submit" disabled={isLoading}>{isLoading ? 'Buscando...' : 'Buscar repuesto'}</button>
         </form>
 
-        <div className="visual-spare-parts-pagination" aria-label="Paginación del manual">
-          <button type="button" onClick={goToPreviousPage} disabled={panelLoading || isFirstPage}>Anterior</button>
-          <label htmlFor="visual-spare-parts-go-page">Ir a página
-            <input
-              id="visual-spare-parts-go-page"
-              type="number"
-              min="1"
-              max={totalPages || undefined}
-              inputMode="numeric"
-              value={pagina}
-              onChange={handlePageInputChange}
-            />
-          </label>
-          <button type="button" onClick={goToNextPage} disabled={panelLoading || isLastPage}>Siguiente</button>
-          <span>Página {currentPageNumber} {totalPages ? `de ${totalPages}` : '· total no disponible'}</span>
-        </div>
-
         <p className="visual-spare-parts-help">
           Manual seleccionado: <strong>{selectedManualOption?.label || manual}</strong>. Página actual: <strong>{currentPageNumber}</strong>{totalPages ? <span> de <strong>{totalPages}</strong></span> : <span> (total no disponible)</span>}.
         </p>
@@ -461,11 +471,31 @@ function VisualSparePartsSearchPage() {
             <div className="visual-panel__canvas">
               {panelData.imageUrl ? (
                 <div className={`visual-panel__image-wrap${isDragging ? ' visual-panel__image-wrap--dragging' : ''}`} ref={viewportRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}>
-                  <div className="visual-panel__toolbar" aria-label="Controles de zoom">
-                    <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom - 0.25)} aria-label="Alejar imagen">Zoom −</button>
-                    <span>{Math.round(zoom * 100)}%</span>
-                    <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom + 0.25)} aria-label="Acercar imagen">Zoom +</button>
-                    <button type="button" onClick={resetVisualView}>Restablecer</button>
+                  <div className="visual-panel__toolbar" aria-label="Controles del visor">
+                    <div className="visual-panel__toolbar-group" aria-label="Navegación de páginas">
+                      <button type="button" onClick={goToPreviousPage} disabled={panelLoading || isFirstPage}>Anterior</button>
+                      <span className="visual-panel__page-count">Página {currentPageNumber} {totalPages ? `de ${totalPages}` : '· total no disponible'}</span>
+                      <label className="visual-panel__goto" htmlFor="visual-panel-go-page">Ir a página
+                        <input
+                          id="visual-panel-go-page"
+                          type="number"
+                          min="1"
+                          max={totalPages || undefined}
+                          inputMode="numeric"
+                          value={goToPageValue}
+                          onChange={(event) => setGoToPageValue(event.target.value)}
+                          onKeyDown={handleGoToPageKeyDown}
+                        />
+                      </label>
+                      <button type="button" onClick={submitGoToPage} disabled={panelLoading || !goToPageValue}>Ir</button>
+                      <button type="button" onClick={goToNextPage} disabled={panelLoading || isLastPage}>Siguiente</button>
+                    </div>
+                    <div className="visual-panel__toolbar-group" aria-label="Zoom de imagen">
+                      <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom - VISUAL_ZOOM_STEP)} disabled={isMinZoom} aria-label="Alejar imagen">Zoom −</button>
+                      <span className="visual-panel__zoom-value">{Math.round(zoom * 100)}%</span>
+                      <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom + VISUAL_ZOOM_STEP)} disabled={isMaxZoom} aria-label="Acercar imagen">Zoom +</button>
+                      <button type="button" onClick={resetVisualView} disabled={zoom === 1 && pan.x === 0 && pan.y === 0}>Restablecer</button>
+                    </div>
                   </div>
                   <div className="visual-panel__image-stage" style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}>
                   <img src={`${apiUrl}${panelData.imageUrl}`} alt={`Despiece ${panelData.manualNombre} página ${panelData.pagina}`} draggable="false" />
@@ -474,7 +504,7 @@ function VisualSparePartsSearchPage() {
                       className={`visual-panel__marker${selectedPanelPoint?.id === point.id ? ' visual-panel__marker--selected' : ''}${pulsePointId === point.id ? ' visual-panel__marker--pulse' : ''}`}
                       type="button"
                       key={point.id}
-                      style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%`, '--marker-scale': 1 / zoom }}
+                      style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%`, '--marker-scale': markerScale }}
                       onClick={() => setSelectedPanelPoint(point)}
                       onKeyDown={(event) => { if (event.key === 'Enter') setSelectedPanelPoint(point); }}
                       aria-label={`Ver referencia ${point.referenciaDespiece}: ${getDisplayValue(point.descripcion)}`}
@@ -494,7 +524,13 @@ function VisualSparePartsSearchPage() {
               ) : null}
             </div>
             <aside className="visual-panel__detail" aria-live="polite">
-              {selectedPanelPoint ? (
+              {selectedPanelPoint && !selectedPanelPointHasPart ? (
+                <div className="visual-panel__empty-detail">
+                  <p className="eyebrow">Referencia {selectedPanelPoint.referenciaDespiece}</p>
+                  <h3>Este punto no tiene repuesto asociado todavía.</h3>
+                  <p>Podés seguir navegando el manual o usar la búsqueda por número de elemento para revisar coincidencias.</p>
+                </div>
+              ) : selectedPanelPoint ? (
                 <>
                   <p className="eyebrow">Referencia {selectedPanelPoint.referenciaDespiece}</p>
                   <h3>{getDisplayValue(selectedPanelPoint.descripcion)}</h3>

@@ -5398,7 +5398,7 @@ h1 {
   background: linear-gradient(135deg, #f8faf7 0%, #eef4ec 100%);
   min-height: clamp(360px, 64vh, 760px);
   cursor: grab;
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 18px 44px rgba(33, 83, 45, 0.08);
 }
@@ -5426,49 +5426,83 @@ h1 {
 }
 
 .visual-panel__toolbar {
-  position: absolute;
-  top: 0.85rem;
-  right: 0.85rem;
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 8;
-  display: inline-flex;
-  gap: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
   align-items: center;
-  padding: 0.35rem;
-  border: 1px solid rgba(33, 83, 45, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 12px 28px rgba(33, 83, 45, 0.16);
+  justify-content: space-between;
+  margin: 0;
+  padding: 0.65rem;
+  border-bottom: 1px solid rgba(33, 83, 45, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(33, 83, 45, 0.12);
   backdrop-filter: blur(10px);
 }
 
+.visual-panel__toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
 .visual-panel__toolbar button,
-.visual-panel__toolbar span {
-  min-width: 2.1rem;
-  min-height: 2.1rem;
+.visual-panel__toolbar span,
+.visual-panel__goto {
+  min-height: 2.15rem;
   border: 0;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #21532d;
+  color: #111;
   font-weight: 900;
 }
 
 .visual-panel__toolbar button {
-  background: #eef4ec;
+  padding: 0 0.85rem;
+  background: #111;
+  color: #fff;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease, opacity 160ms ease;
 }
 
-.visual-panel__toolbar button:last-child {
-  padding: 0 0.8rem;
+.visual-panel__toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
 }
 
-.visual-panel__toolbar button:hover,
-.visual-panel__toolbar button:focus-visible {
-  background: #21532d;
+.visual-panel__toolbar button:hover:not(:disabled),
+.visual-panel__toolbar button:focus-visible:not(:disabled) {
+  background: #b91c1c;
   color: #fff;
   transform: translateY(-1px);
+}
+
+.visual-panel__page-count,
+.visual-panel__zoom-value,
+.visual-panel__goto {
+  padding: 0 0.75rem;
+  background: #fff;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+}
+
+.visual-panel__goto {
+  gap: 0.4rem;
+}
+
+.visual-panel__goto input {
+  width: 4.5rem;
+  border: 1px solid rgba(17, 17, 17, 0.16);
+  border-radius: 999px;
+  padding: 0.35rem 0.55rem;
+  font: inherit;
 }
 
 .visual-panel__marker {
@@ -5668,8 +5702,17 @@ h1 {
   }
 
   .visual-panel__toolbar {
-    left: 0.75rem;
-    right: auto;
+    align-items: stretch;
+  }
+
+  .visual-panel__toolbar-group,
+  .visual-panel__toolbar button,
+  .visual-panel__goto {
+    width: 100%;
+  }
+
+  .visual-panel__toolbar-group {
+    justify-content: stretch;
   }
 }
 
