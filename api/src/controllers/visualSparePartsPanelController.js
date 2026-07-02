@@ -1,5 +1,7 @@
 import { applyVisualDataPageOffset, createVisualPoint, deleteVisualPoint, getVisualDataPageConfig, getVisualSparePartsPanel, saveVisualDataPageConfig, searchManualSparePartsForVisualPage, updateVisualPoint } from '../services/visualSparePartsPanelService.js';
 
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
 const handleError = (response, error, message, status = 500) => {
   console.error('[visual-spare-parts-panel]', error);
   response.status(error.statusCode || status).json({ status: 'error', message, duplicatePoint: error.duplicatePoint });
@@ -52,7 +54,14 @@ export const applyAdminVisualDataPageOffsetController = async (request, response
 
 export const searchAdminVisualManualSparePartsController = async (request, response) => {
   try {
-    response.json({ data: await searchManualSparePartsForVisualPage({ manualNombre: request.query.manualNombre, paginaDatos: request.query.paginaDatos, search: request.query.search }) });
+    const paginaDatos = request.query.paginaDatos || request.query.dataPage || request.query.pagina || request.query.page;
+    if (isDevelopment) console.debug('[admin-visual-manual-references-controller]', {
+      manualRecibido: request.query.manualNombre,
+      paginaRecibida: request.query.pagina || request.query.page,
+      paginaDatosRecibida: request.query.paginaDatos || request.query.dataPage,
+      paginaDatosUsada: paginaDatos
+    });
+    response.json({ data: await searchManualSparePartsForVisualPage({ manualNombre: request.query.manualNombre, pagina: request.query.pagina || request.query.page, paginaDatos, dataPage: request.query.dataPage, search: request.query.search }) });
   } catch (error) { handleError(response, error, 'No se pudieron buscar repuestos manuales para vincular.'); }
 };
 
