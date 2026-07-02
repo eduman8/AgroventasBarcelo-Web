@@ -19,6 +19,11 @@ const emptyManualPointData = {
   observacionManual: ''
 };
 
+const buildDraftPointFromClick = (event, element) => ({
+  coords: coordsFromPointer(event, element),
+  suggestedReference: '' // Futuro OCR/detección: sugerir referencia más cercana al click.
+});
+
 const coordsFromPointer = (event, element) => {
   const rect = element.getBoundingClientRect();
   return {
@@ -46,6 +51,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const [dataPageStatus, setDataPageStatus] = useState('');
   const [manualLinkSearch, setManualLinkSearch] = useState('');
   const [manualLinkResults, setManualLinkResults] = useState([]);
+  const [assistedReferences, setAssistedReferences] = useState([]);
   const [selectedManualLink, setSelectedManualLink] = useState(null);
   const [manualLinkStatus, setManualLinkStatus] = useState('');
   const [manualPointData, setManualPointData] = useState(emptyManualPointData);
@@ -60,6 +66,8 @@ function AdminVisualSparePartsPage({ currentPath }) {
     try {
       const nextPanel = await getAdminVisualPoints({ manualNombre, pagina });
       setPanel(nextPanel);
+      const refs = await searchAdminVisualManualSpareParts({ manualNombre, paginaDatos: nextPanel.paginaDatos || pagina, search: '' });
+      setAssistedReferences(refs.data || []);
       setDataPageMode(nextPanel.dataPageConfig?.mode || 'same');
       setCustomDataPage(String(nextPanel.paginaDatos || pagina));
       setStatus('');
@@ -114,7 +122,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
   const validateForm = () => {
     if (!coords) return 'Hacé clic sobre la imagen para capturar la posición.';
     if (coords.xPercent < 0 || coords.xPercent > 100 || coords.yPercent < 0 || coords.yPercent > 100) return 'Las coordenadas X/Y deben estar dentro de la imagen.';
-    if (!referenciaDespiece.trim()) return 'Ingresá la referencia de despiece.';
+    if (!referenciaDespiece.trim()) return 'Seleccioná la referencia de despiece.';
     return '';
   };
 
@@ -143,11 +151,11 @@ function AdminVisualSparePartsPage({ currentPath }) {
     const trimmedReference = referenciaDespiece.trim();
     const duplicatePoint = findDuplicatePoint(trimmedReference);
     if (duplicatePoint) {
-      selectPoint(duplicatePoint, `La referencia ${trimmedReference} ya existe. Se seleccionó el punto existente para editarlo.`);
+      selectPoint(duplicatePoint, `La referencia ${trimmedReference} ya tiene un punto asociado.`);
       return;
     }
 
-    const payload = { manualNombre, pagina, referenciaDespiece: trimmedReference, repuestoManualId: selectedManualLink?.id ?? null, ...manualPointData, ...coords, activo: true };
+    const payload = { manualNombre, pagina, referenciaDespiece: trimmedReference, repuestoManualId: selectedManualLink?.id ?? selectedReferencePart?.id ?? null, ...manualPointData, ...coords, activo: true };
     try {
       const savedPoint = editingId ? await updateAdminVisualPoint(editingId, payload) : await createAdminVisualPoint(payload);
       refreshPointInPanel(savedPoint);
@@ -159,12 +167,14 @@ function AdminVisualSparePartsPage({ currentPath }) {
 
   const handleImageClick = (event) => {
     if (event.target.closest('.visual-panel__marker')) return;
-    const nextCoords = coordsFromPointer(event, event.currentTarget);
+    const draftPoint = buildDraftPointFromClick(event, event.currentTarget);
+    const nextCoords = draftPoint.coords;
     setCoords(nextCoords);
+    if (draftPoint.suggestedReference) applyAssistedReference(draftPoint.suggestedReference);
     setEditingId(null);
     setMoveMode(false);
     setManualPointData(emptyManualPointData);
-    setStatus(`Nuevo punto en X ${nextCoords.xPercent}% / Y ${nextCoords.yPercent}%. Ingresá una referencia y guardá.`);
+    setStatus(`Nuevo punto en X ${nextCoords.xPercent}% / Y ${nextCoords.yPercent}%. Elegí la referencia asistida y guardá.`);
     focusReferenceInput();
   };
 
@@ -231,6 +241,32 @@ function AdminVisualSparePartsPage({ currentPath }) {
     window.addEventListener('keydown', handleKeyboardShortcut);
     return () => window.removeEventListener('keydown', handleKeyboardShortcut);
   }, [editingId, handleDelete, handleUndoLastPoint, lastCreatedPointId, resetForm]);
+
+
+  const usedReferenceSet = new Set((panel?.puntos || []).map((point) => normalizeDuplicateValue(point.referenciaDespiece)));
+  const selectedReferencePart = assistedReferences.find((part) => normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece)) || null;
+  const totalReferences = assistedReferences.length;
+  const loadedReferences = assistedReferences.filter((part) => usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece))).length;
+  const pendingReferences = Math.max(totalReferences - loadedReferences, 0);
+  const progressPercent = totalReferences ? Math.round((loadedReferences / totalReferences) * 100) : 0;
+  const availableReferences = assistedReferences.filter((part) => part.referenciaDespiece);
+
+  const applyAssistedReference = (reference) => {
+    const part = assistedReferences.find((item) => normalizeDuplicateValue(item.referenciaDespiece) === normalizeDuplicateValue(reference));
+    setReferenciaDespiece(reference || '');
+    setSelectedManualLink(part || null);
+    setManualPointData(emptyManualPointData);
+    if (part) setStatus(`Referencia ${part.referenciaDespiece} seleccionada automáticamente desde RepuestosManuales.`);
+  };
+
+  const selectAdjacentReference = (direction) => {
+    if (!availableReferences.length) return;
+    const currentIndex = availableReferences.findIndex((part) => normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece));
+    const fallback = direction > 0 ? -1 : availableReferences.length;
+    const nextIndex = (currentIndex >= 0 ? currentIndex : fallback) + direction;
+    const boundedIndex = Math.min(Math.max(nextIndex, 0), availableReferences.length - 1);
+    applyAssistedReference(availableReferences[boundedIndex].referenciaDespiece);
+  };
 
   const handleSaveDataPageConfig = async (event) => {
     event.preventDefault();
@@ -330,6 +366,12 @@ function AdminVisualSparePartsPage({ currentPath }) {
 
         {status ? <p className="status-message">{status}</p> : null}
 
+        {panel ? <section className="admin-visual-assisted-progress" aria-label="Progreso de carga asistida">
+          <div><strong>Página {pagina || '-'}</strong><span>{totalReferences} referencias · {loadedReferences} cargadas · {pendingReferences} pendientes · {progressPercent}%</span></div>
+          <progress max="100" value={progressPercent}>{progressPercent}%</progress>
+          <div className="admin-visual-reference-list">{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); return <button type="button" key={part.id} className={used ? 'is-used' : ''} onClick={() => applyAssistedReference(part.referenciaDespiece)}>{used ? '✔' : '○'} {part.referenciaDespiece}</button>; })}</div>
+        </section> : null}
+
         <div className="admin-visual-layout">
           <div className="admin-visual-canvas-column">
             <section className="admin-visual-card admin-visual-canvas-card" aria-labelledby="admin-visual-canvas-title">
@@ -342,8 +384,8 @@ function AdminVisualSparePartsPage({ currentPath }) {
               <div className="admin-visual-image-viewport">
                 <div ref={imageWrapRef} className={`visual-panel__image-stage admin-visual-image-stage${moveMode ? ' visual-panel__image-wrap--dragging' : ''}`} onClick={handleImageClick} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} role="button" tabIndex="0">
                   {panel?.imageUrl ? <img src={`${apiUrl}${panel.imageUrl}`} alt={`Manual ${manualNombre} página ${pagina}`} draggable="false" /> : <p className="status-message manual-spare-parts-empty">No hay imagen cargada para esta página.</p>}
-                  {(panel?.puntos || []).map((point) => <button type="button" key={point.id} className={`visual-panel__marker${editingId === point.id ? ' visual-panel__marker--selected' : ''}`} onPointerDown={(event) => handleMarkerPointerDown(event, point)} style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%` }}>{point.referenciaDespiece}</button>)}
-                  {coords && !editingId ? <span className="visual-panel__marker visual-panel__marker--draft" style={{ left: `${coords.xPercent}%`, top: `${coords.yPercent}%` }}>+</span> : null}
+                  {(panel?.puntos || []).map((point) => <button type="button" key={point.id} className={`visual-panel__marker visual-panel__marker--loaded${editingId === point.id ? ' visual-panel__marker--selected' : ''}`} title={`Referencia ${point.referenciaDespiece} · Código ${point.codigo || point.codigoManual || '-'} · ${point.descripcion || point.descripcionManual || 'Sin descripción'}`} onPointerDown={(event) => handleMarkerPointerDown(event, point)} style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%` }}>{point.referenciaDespiece}<small>Ref. {point.referenciaDespiece}<br />Código: {point.codigo || point.codigoManual || '-'}<br />{point.descripcion || point.descripcionManual || 'Sin descripción'}</small></button>)}
+                  {coords && !editingId ? <span className="visual-panel__marker visual-panel__marker--draft admin-visual-marker--new" style={{ left: `${coords.xPercent}%`, top: `${coords.yPercent}%` }}>{referenciaDespiece || '+'}</span> : null}
                 </div>
               </div>
               <p className="admin-visual-shortcuts">Click en punto → seleccionar. Click en imagen → crear. Enter guarda. Escape cancela. Delete elimina seleccionado. Ctrl+Z deshace el último punto nuevo.</p>
@@ -376,12 +418,15 @@ function AdminVisualSparePartsPage({ currentPath }) {
               <section className="admin-visual-card">
                 <div className="admin-visual-card__header"><h3>Datos básicos del punto</h3></div>
                 <div className="admin-visual-fields-grid">
-                  <label>Referencia despiece<input ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => setReferenciaDespiece(event.target.value)} placeholder="Ej.: 7" /></label>
+                  <label>Referencia<select ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => applyAssistedReference(event.target.value)}><option value="">Seleccionar referencia</option>{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); return <option key={part.id} value={part.referenciaDespiece} disabled={used && normalizeDuplicateValue(part.referenciaDespiece) !== normalizeDuplicateValue(referenciaDespiece)}>{used ? '✔' : '○'} {part.referenciaDespiece}</option>; })}</select></label>
                   <label>Posición X<input value={coords?.xPercent ?? ''} readOnly placeholder="Sin capturar" /></label>
                   <label>Posición Y<input value={coords?.yPercent ?? ''} readOnly placeholder="Sin capturar" /></label>
                 </div>
+                <div className="admin-visual-assisted-detail"><p><strong>Código:</strong> {selectedReferencePart?.codigo || selectedManualLink?.codigo || '-'}</p><p><strong>Descripción:</strong> {selectedReferencePart?.descripcion || selectedManualLink?.descripcion || '-'}</p></div>
                 <p className="admin-visual-selection">Estado: {coords ? 'posición capturada' : 'sin capturar'}</p>
                 <div className="admin-visual-actions">
+                  <button className="button button--secondary" type="button" onClick={() => selectAdjacentReference(-1)}>Referencia anterior</button>
+                  <button className="button button--secondary" type="button" onClick={() => selectAdjacentReference(1)}>Referencia siguiente</button>
                   <button className="button" type="submit">{editingId ? 'Guardar cambios' : 'Guardar punto'}</button>
                   {editingId ? <button className="button button--secondary" type="button" onClick={() => setMoveMode((value) => !value)}>{moveMode ? 'Desactivar mover punto' : 'Mover punto'}</button> : null}
                   <button className="button button--secondary" type="button" onClick={resetForm}>Cancelar</button>

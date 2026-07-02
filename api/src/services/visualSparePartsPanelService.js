@@ -512,7 +512,7 @@ export const createVisualPoint = async ({ manualNombre, archivoOrigen = '', pagi
   }
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference });
   if (duplicatePoint) {
-    const error = new Error('Ya existe un punto visual activo para este manual, página y referencia. Seleccioná el existente para editarlo.');
+    const error = new Error(`La referencia ${reference} ya tiene un punto asociado.`);
     error.statusCode = 409;
     error.duplicatePoint = duplicatePoint;
     throw error;
@@ -536,7 +536,7 @@ export const updateVisualPoint = async (id, data) => {
   }
   const duplicatePoint = await findActiveDuplicateVisualPoint(pool, { manualNombre: manual, pagina: page, referenciaDespiece: reference, excludeId: pointId });
   if (duplicatePoint) {
-    const error = new Error('Ya existe otro punto visual activo para este manual, página y referencia.');
+    const error = new Error(`La referencia ${reference} ya tiene un punto asociado.`);
     error.statusCode = 409;
     error.duplicatePoint = duplicatePoint;
     throw error;
@@ -565,7 +565,7 @@ export const searchManualSparePartsForVisualPage = async ({ manualNombre, pagina
     .input('paginaDatos', sql.Int, dataPage)
     .input('search', sql.NVarChar(152), likeSearch)
     .query(`
-SELECT TOP (50) rm.Id AS id, rm.Pagina AS pagina, ${printedPageSelect} AS paginaImpresa, rm.ReferenciaDespiece AS referenciaDespiece,
+SELECT TOP (500) rm.Id AS id, rm.Pagina AS pagina, ${printedPageSelect} AS paginaImpresa, rm.ReferenciaDespiece AS referenciaDespiece,
   rm.Codigo AS codigo, rm.Descripcion AS descripcion, rm.Categoria AS categoria, rm.Marca AS marca, ${modelSelect}
 FROM dbo.RepuestosManuales rm
 WHERE rm.Activo = 1
