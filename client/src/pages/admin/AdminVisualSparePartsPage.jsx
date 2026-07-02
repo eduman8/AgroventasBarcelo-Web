@@ -25,26 +25,65 @@ const compareReferencesNaturally = (left, right) => {
 };
 const getAssistedReferenceScore = (part) => ['codigo', 'descripcion', 'categoria', 'marca', 'modelo', 'paginaImpresa']
   .reduce((score, field) => score + (normalizeReferenceValue(part?.[field]) ? 1 : 0), 0);
+const mergeReferenceOrigins = (...origins) => Array.from(new Set(origins.flatMap((origin) => String(origin || '').split(' + ')).filter(Boolean))).join(' + ');
 const normalizeAssistedReferences = (references = []) => {
   const byReference = new Map();
   for (const part of references || []) {
     const reference = normalizeReferenceValue(part?.referenciaDespiece);
     if (!reference) continue;
-    const normalizedPart = { ...part, referenciaDespiece: reference };
     const key = normalizeDuplicateValue(reference);
+    const normalizedPart = {
+      ...part,
+      id: part?.id ?? `reference-${key}`,
+      assistedReferenceId: part?.assistedReferenceId || key,
+      referenciaDespiece: reference,
+      referenceOrigin: part?.referenceOrigin || 'Importada'
+    };
     const current = byReference.get(key);
-    if (!current || getAssistedReferenceScore(normalizedPart) > getAssistedReferenceScore(current)) byReference.set(key, normalizedPart);
+    if (!current) {
+      byReference.set(key, normalizedPart);
+      continue;
+    }
+    const preferred = getAssistedReferenceScore(normalizedPart) > getAssistedReferenceScore(current) ? normalizedPart : current;
+    byReference.set(key, {
+      ...current,
+      ...preferred,
+      referenciaDespiece: reference,
+      assistedReferenceId: current.assistedReferenceId || normalizedPart.assistedReferenceId || key,
+      referenceOrigin: mergeReferenceOrigins(current.referenceOrigin, normalizedPart.referenceOrigin)
+    });
   }
   return Array.from(byReference.values()).sort(compareReferencesNaturally);
 };
-const debugAssistedReferences = ({ rawReferences = [], normalizedReferences = [], usedReferences = new Set() }) => {
+const buildVisualPointReferences = (points = []) => (points || []).map((point) => {
+  const reference = normalizeReferenceValue(point?.referenciaDespiece);
+  if (!reference) return null;
+  const key = normalizeDuplicateValue(reference);
+  return {
+    id: `visual-point-${point.id ?? key}`,
+    assistedReferenceId: key,
+    referenciaDespiece: reference,
+    codigo: point.codigo || point.codigoManual || '',
+    descripcion: point.descripcion || point.descripcionManual || '',
+    categoria: point.categoria || point.categoriaManual || '',
+    marca: point.marca || point.marcaManual || '',
+    modelo: point.modelo || point.modeloManual || '',
+    paginaImpresa: point.paginaDatos || point.pagina || '',
+    referenceOrigin: point.repuestoManualId ? 'Manual + Punto visual' : 'Punto visual'
+  };
+}).filter(Boolean);
+const combineAssistedReferences = (importedReferences = [], visualPoints = []) => normalizeAssistedReferences([
+  ...(importedReferences || []).map((part) => ({ ...part, referenceOrigin: part?.referenceOrigin || 'Importada' })),
+  ...buildVisualPointReferences(visualPoints)
+]);
+const debugAssistedReferences = ({ importedReferences = [], visualPoints = [], combinedReferences = [], usedReferences = new Set() }) => {
   if (!import.meta.env.DEV) return;
-  const used = normalizedReferences.filter((part) => usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece);
-  const pending = normalizedReferences.filter((part) => !usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece);
+  const used = combinedReferences.filter((part) => usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece);
+  const pending = combinedReferences.filter((part) => !usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece);
   console.debug('[admin-visual-assisted-references]', {
-    rawCount: rawReferences.length,
-    rawReferences: rawReferences.map((part) => normalizeReferenceValue(part?.referenciaDespiece)).filter(Boolean),
-    normalizedReferences: normalizedReferences.map((part) => part.referenciaDespiece),
+    importedReferences: importedReferences.map((part) => normalizeReferenceValue(part?.referenciaDespiece)).filter(Boolean),
+    existingVisualPoints: visualPoints.map((point) => normalizeReferenceValue(point?.referenciaDespiece)).filter(Boolean),
+    combinedReferences: combinedReferences.map((part) => ({ referenciaDespiece: part.referenciaDespiece, origin: part.referenceOrigin })),
     usedReferences: used,
     pendingReferences: pending
   });
@@ -136,12 +175,12 @@ function AdminVisualSparePartsPage({ currentPath }) {
       if (import.meta.env.DEV) console.debug('[admin-visual-manual-references-request]', { endpoint: adminManualRefsEndpoint, manualNombre, visualPage: pagina, dataPage, paginaDatos: dataPage, queryParams: refsParams.toString() });
       const refs = await searchAdminVisualManualSpareParts({ manualNombre, pagina: pagina, page: pagina, paginaDatos: dataPage, dataPage, search: '' });
       const rawRefs = refs.data || [];
-      const normalizedRefs = normalizeAssistedReferences(rawRefs);
+      const normalizedRefs = combineAssistedReferences(rawRefs, nextPanel.puntos || []);
       const usedReferences = new Set((nextPanel.puntos || []).map((point) => normalizeDuplicateValue(point.referenciaDespiece)));
       setAssistedReferences(normalizedRefs);
       setReferenceDiagnostic(buildReferenceDiagnostic({ manualNombre, visualPage: pagina, dataPage, endpoint: adminManualRefsEndpoint, queryParams: refsParams.toString(), receivedCount: rawRefs.length }));
-      debugAssistedReferences({ rawReferences: rawRefs, normalizedReferences: normalizedRefs, usedReferences });
-      if (import.meta.env.DEV) console.debug('[admin-visual-manual-references-response]', { rawResponse: refs, receivedCount: rawRefs.length, receivedReferences: rawRefs.map((part) => normalizeReferenceValue(part?.referenciaDespiece)), normalizedReferences: normalizedRefs.map((part) => part.referenciaDespiece), usedReferences: normalizedRefs.filter((part) => usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece), pendingReferences: normalizedRefs.filter((part) => !usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece) });
+      debugAssistedReferences({ importedReferences: rawRefs, visualPoints: nextPanel.puntos || [], combinedReferences: normalizedRefs, usedReferences });
+      if (import.meta.env.DEV) console.debug('[admin-visual-manual-references-response]', { rawResponse: refs, receivedCount: rawRefs.length, receivedReferences: rawRefs.map((part) => normalizeReferenceValue(part?.referenciaDespiece)), existingVisualPoints: (nextPanel.puntos || []).map((point) => normalizeReferenceValue(point?.referenciaDespiece)), combinedReferences: normalizedRefs.map((part) => ({ referenciaDespiece: part.referenciaDespiece, origin: part.referenceOrigin })), usedReferences: normalizedRefs.filter((part) => usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece), pendingReferences: normalizedRefs.filter((part) => !usedReferences.has(normalizeDuplicateValue(part.referenciaDespiece))).map((part) => part.referenciaDespiece) });
       setDataPageMode(nextPanel.dataPageConfig?.mode || 'same');
       setCustomDataPage(String(nextPanel.paginaDatos || pagina));
       setStatus('');
@@ -216,6 +255,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
     if (!manualNombre || !pagina) return null;
     const nextPanel = await getAdminVisualPoints({ manualNombre, pagina });
     setPanel(nextPanel);
+    setAssistedReferences((current) => combineAssistedReferences(current, nextPanel.puntos || []));
     setDataPageMode(nextPanel.dataPageConfig?.mode || 'same');
     setCustomDataPage(String(nextPanel.paginaDatos || pagina));
     return nextPanel;
@@ -241,7 +281,9 @@ function AdminVisualSparePartsPage({ currentPath }) {
       setLastCreatedPointId(editingId ? null : savedPoint?.id ?? null);
       if (continuousMode && !editingId) {
         const nextUsedReferences = new Set([...(nextPanel?.puntos || []), savedPoint].map((point) => normalizeDuplicateValue(point.referenciaDespiece)));
-        const nextReference = findPendingReferenceFrom(trimmedReference, 1, availableReferences, nextUsedReferences);
+        const nextAvailableReferences = combineAssistedReferences(availableReferences, nextPanel?.puntos || []);
+        setAssistedReferences(nextAvailableReferences);
+        const nextReference = findPendingReferenceFrom(trimmedReference, 1, nextAvailableReferences, nextUsedReferences);
         setCoords(null);
         setEditingId(null);
         setMoveMode(false);
@@ -254,7 +296,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
         } else {
           setReferenciaDespiece('');
           setSelectedManualLink(null);
-          setStatus(`✅ Página completada. ${totalReferences} / ${totalReferences} referencias.`);
+          setStatus(`✅ Página completada. ${nextAvailableReferences.length} / ${nextAvailableReferences.length} referencias.`);
         }
         return;
       }
@@ -372,7 +414,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
     setReferenciaDespiece(reference || '');
     setSelectedManualLink(part || null);
     setManualPointData(emptyManualPointData);
-    if (part && announce) setStatus(`Referencia ${part.referenciaDespiece} seleccionada automáticamente desde RepuestosManuales.`);
+    if (part && announce) setStatus(`Referencia ${part.referenciaDespiece} seleccionada (${part.referenceOrigin || 'Importada'}).`);
   };
 
   const selectAdjacentReference = (direction) => {
@@ -566,7 +608,7 @@ function AdminVisualSparePartsPage({ currentPath }) {
           </div>
 
           <aside className="admin-visual-editor-panel" aria-label="Editor del punto seleccionado">
-            <section className="admin-visual-card admin-visual-reference-panel"><div className="admin-visual-card__header"><h3>Referencias · Datos pág. {dataPageLabel}</h3></div><div className="admin-visual-reference-list">{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); const current = normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece); return <button type="button" key={part.id} className={`${used ? 'is-used' : 'is-pending'}${current ? ' is-current' : ''}`} onClick={() => applyAssistedReference(part.referenciaDespiece)}>{current ? '▶' : used ? '✔' : '○'} {part.referenciaDespiece}</button>; })}</div></section>
+            <section className="admin-visual-card admin-visual-reference-panel"><div className="admin-visual-card__header"><h3>Referencias · Datos pág. {dataPageLabel}</h3></div><div className="admin-visual-reference-list">{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); const current = normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece); return <button type="button" key={part.assistedReferenceId || part.id} className={`${used ? 'is-used' : 'is-pending'}${current ? ' is-current' : ''}`} title={`${part.referenceOrigin || 'Importada'} · ${part.codigo || 'Sin código'} · ${part.descripcion || 'Referencia manual sin datos importados'}`} onClick={() => applyAssistedReference(part.referenciaDespiece)}>{current ? '▶' : used ? '✔' : '○'} {part.referenciaDespiece}<small> · {part.referenceOrigin || 'Importada'}</small></button>; })}</div></section>
             <form className="admin-visual-editor-form" onSubmit={handleSubmit}>
               <section className="admin-visual-card admin-visual-editor-heading">
                 {editingId || coords ? <>
@@ -582,11 +624,11 @@ function AdminVisualSparePartsPage({ currentPath }) {
               <section className="admin-visual-card">
                 <div className="admin-visual-card__header"><h3>{referenciaDespiece ? `Referencia ${referenciaDespiece}` : 'Datos básicos del punto'}</h3></div>
                 <div className="admin-visual-fields-grid">
-                  <label>Referencia<select ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => applyAssistedReference(event.target.value)}><option value="">Seleccionar referencia</option>{referenciaDespiece && !availableReferences.some((part) => normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece)) ? <option value={referenciaDespiece}>Manual: {referenciaDespiece}</option> : null}{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); return <option key={part.id} value={part.referenciaDespiece} disabled={used && normalizeDuplicateValue(part.referenciaDespiece) !== normalizeDuplicateValue(referenciaDespiece)}>{used ? '✔' : '○'} {part.referenciaDespiece}</option>; })}</select></label>
+                  <label>Referencia<select ref={referenceInputRef} value={referenciaDespiece} onChange={(event) => applyAssistedReference(event.target.value)}><option value="">Seleccionar referencia</option>{referenciaDespiece && !availableReferences.some((part) => normalizeDuplicateValue(part.referenciaDespiece) === normalizeDuplicateValue(referenciaDespiece)) ? <option value={referenciaDespiece}>Manual: {referenciaDespiece}</option> : null}{availableReferences.map((part) => { const used = usedReferenceSet.has(normalizeDuplicateValue(part.referenciaDespiece)); return <option key={part.assistedReferenceId || part.id} value={part.referenciaDespiece} disabled={used && normalizeDuplicateValue(part.referenciaDespiece) !== normalizeDuplicateValue(referenciaDespiece)}>{used ? '✔' : '○'} {part.referenciaDespiece} · {part.referenceOrigin || 'Importada'}</option>; })}</select></label>
                   <label>Posición X<input value={coords?.xPercent ?? ''} readOnly placeholder="Sin capturar" /></label>
                   <label>Posición Y<input value={coords?.yPercent ?? ''} readOnly placeholder="Sin capturar" /></label>
                 </div>
-                <div className="admin-visual-assisted-detail"><p><strong>Código:</strong> {selectedReferencePart?.codigo || selectedManualLink?.codigo || '-'}</p><p><strong>Descripción:</strong> {selectedReferencePart?.descripcion || selectedManualLink?.descripcion || '-'}</p></div>
+                <div className="admin-visual-assisted-detail"><p><strong>Origen:</strong> {selectedReferencePart?.referenceOrigin || selectedManualLink ? selectedReferencePart?.referenceOrigin || 'Manual' : '-'}</p><p><strong>Código:</strong> {selectedReferencePart?.codigo || selectedManualLink?.codigo || '-'}</p><p><strong>Descripción:</strong> {selectedReferencePart?.descripcion || selectedManualLink?.descripcion || (selectedReferencePart ? 'Referencia manual sin datos importados' : '-')}</p></div>
                 <div className="admin-visual-actions"><button className="button button--secondary" type="button" onClick={() => setManualReferenceOpen((value) => !value)}>Agregar referencia manual</button></div>
                 {manualReferenceOpen ? <div className="admin-visual-fields-grid"><label>Referencia manual<input value={manualReferenceDraft.referenciaDespiece} onChange={handleManualReferenceDraftChange('referenciaDespiece')} placeholder="Ej.: 1" /></label><label>Código<input value={manualReferenceDraft.codigo} onChange={handleManualReferenceDraftChange('codigo')} placeholder="Ej.: P1131" /></label><label>Descripción<input value={manualReferenceDraft.descripcion} onChange={handleManualReferenceDraftChange('descripcion')} placeholder="Descripción excepcional" /></label><button className="button button--secondary" type="button" onClick={applyManualReferenceFallback}>Usar fallback manual</button></div> : null}
                 <p className="admin-visual-selection">Estado: {coords ? 'posición capturada' : 'sin capturar'}</p>
