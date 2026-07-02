@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import CatalogAccessRequired from '../components/auth/CatalogAccessRequired.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiUrl } from '../services/sparePartsService.js';
@@ -34,9 +34,6 @@ const getDisplayValue = (value, fallback = 'Sin informar') => {
   return value;
 };
 
-const MIN_VISUAL_ZOOM = 0.6;
-const MAX_VISUAL_ZOOM = 1.8;
-const VISUAL_ZOOM_STEP = 0.15;
 
 const getManualPartKey = (sparePart) => `manual-${sparePart.id ?? `${sparePart.codigo}-${sparePart.manualNombre}`}`;
 const getManualSelectedPartId = (sparePart) => getManualPartKey(sparePart);
@@ -92,62 +89,8 @@ function VisualSparePartsSearchPage() {
   const [selectedPartIds, setSelectedPartIds] = useState(() =>
     getContactSelectedParts().map((sparePart) => String(sparePart.id))
   );
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [pulsePointId, setPulsePointId] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const viewportRef = useRef(null);
-  const dragRef = useRef({ pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
-  const touchRef = useRef({ distance: 0, zoom: 1 });
-
-
-
-  const clampZoom = useCallback((value) => Math.min(Math.max(Number(value) || 1, MIN_VISUAL_ZOOM), MAX_VISUAL_ZOOM), []);
-
-  const updateZoom = useCallback((nextZoom, focalPoint) => {
-    setZoom((currentZoom) => {
-      const normalizedZoom = clampZoom(typeof nextZoom === 'function' ? nextZoom(currentZoom) : nextZoom);
-
-      setPan((currentPan) => {
-        if (normalizedZoom === 1) {
-          return { x: 0, y: 0 };
-        }
-
-        if (!focalPoint || !viewportRef.current) {
-          return currentPan;
-        }
-
-        const bounds = viewportRef.current.getBoundingClientRect();
-        const originX = focalPoint.x - bounds.left - bounds.width / 2;
-        const originY = focalPoint.y - bounds.top - bounds.height / 2;
-        const ratio = normalizedZoom / currentZoom;
-
-        return {
-          x: originX - (originX - currentPan.x) * ratio,
-          y: originY - (originY - currentPan.y) * ratio
-        };
-      });
-
-      return normalizedZoom;
-    });
-  }, [clampZoom]);
-
-  const resetVisualView = useCallback(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  }, []);
-
   const focusPanelPoint = useCallback((point) => {
-    const targetZoom = MAX_VISUAL_ZOOM;
-    const viewport = viewportRef.current;
-    if (viewport) {
-      const bounds = viewport.getBoundingClientRect();
-      setPan({
-        x: (0.5 - Number(point.xPercent) / 100) * bounds.width * targetZoom,
-        y: (0.5 - Number(point.yPercent) / 100) * bounds.height * targetZoom
-      });
-    }
-    setZoom(targetZoom);
     setSelectedPanelPoint(point);
     setPulsePointId(point.id);
     window.setTimeout(() => setPulsePointId((currentId) => (currentId === point.id ? null : currentId)), 2800);
@@ -161,55 +104,11 @@ function VisualSparePartsSearchPage() {
   }, [panelData]);
 
 
-  const handlePointerDown = useCallback((event) => {
-    if (zoom <= 1 || event.target.closest('.visual-panel__marker')) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: pan.x, originY: pan.y, moved: false };
-    setIsDragging(true);
-  }, [pan.x, pan.y, zoom]);
-
-  const handlePointerMove = useCallback((event) => {
-    if (dragRef.current.pointerId !== event.pointerId || zoom <= 1) return;
-    const deltaX = event.clientX - dragRef.current.startX;
-    const deltaY = event.clientY - dragRef.current.startY;
-    if (Math.abs(deltaX) + Math.abs(deltaY) > 3) dragRef.current.moved = true;
-    setPan({ x: dragRef.current.originX + deltaX, y: dragRef.current.originY + deltaY });
-  }, [zoom]);
-
-  const handlePointerUp = useCallback((event) => {
-    if (dragRef.current.pointerId === event.pointerId) {
-      dragRef.current.pointerId = null;
-      setIsDragging(false);
-    }
-  }, []);
-
-  const getTouchDistance = (touches) => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
-
-  const handleTouchStart = useCallback((event) => {
-    if (event.touches.length === 2) {
-      touchRef.current = { distance: getTouchDistance(event.touches), zoom };
-    }
-  }, [zoom]);
-
-  const handleTouchMove = useCallback((event) => {
-    if (event.touches.length === 2 && touchRef.current.distance) {
-      event.preventDefault();
-      const distance = getTouchDistance(event.touches);
-      updateZoom(touchRef.current.zoom * (distance / touchRef.current.distance), {
-        x: (event.touches[0].clientX + event.touches[1].clientX) / 2,
-        y: (event.touches[0].clientY + event.touches[1].clientY) / 2
-      });
-    }
-  }, [updateZoom]);
-
   const selectedManualOption = manualOptions.find((manualOption) => manualOption.value === manual);
   const totalPages = panelData?.totalPages ?? selectedManualOption?.totalPages ?? null;
   const currentPageNumber = Number.parseInt(pagina, 10) || 1;
   const isFirstPage = currentPageNumber <= 1;
   const isLastPage = Boolean(totalPages && currentPageNumber >= totalPages);
-  const isMinZoom = zoom <= MIN_VISUAL_ZOOM;
-  const isMaxZoom = zoom >= MAX_VISUAL_ZOOM;
-  const markerScale = Math.min(Math.max(1 / zoom, 0.72), 1.35);
   const selectedPanelPointHasPart = Boolean(selectedPanelPoint && (selectedPanelPoint.codigo || selectedPanelPoint.descripcion || selectedPanelPoint.repuestoCatalogoId || selectedPanelPoint.disponibleEnCatalogo || selectedPanelPoint.matchSource === 'customManual'));
 
   useEffect(() => {
@@ -236,7 +135,6 @@ function VisualSparePartsSearchPage() {
         if (isCurrentRequest) {
           setPanelData(panelResponse);
           setSelectedPanelPoint(null);
-          resetVisualView();
         }
       })
       .catch((panelLoadError) => {
@@ -254,7 +152,7 @@ function VisualSparePartsSearchPage() {
     return () => {
       isCurrentRequest = false;
     };
-  }, [isAuthenticated, manual, pagina, token, resetVisualView]);
+  }, [isAuthenticated, manual, pagina, token]);
 
   const resultsSummary = useMemo(() => {
     if (!submittedSearch || isLoading || error) {
@@ -288,7 +186,6 @@ function VisualSparePartsSearchPage() {
     setResults([]);
     setError('');
     setSelectionNotice('');
-    resetVisualView();
   };
 
   const handlePageInputChange = (event) => {
@@ -470,7 +367,7 @@ function VisualSparePartsSearchPage() {
           <div className="visual-panel__layout">
             <div className="visual-panel__canvas">
               {panelData.imageUrl ? (
-                <div className={`visual-panel__image-wrap${isDragging ? ' visual-panel__image-wrap--dragging' : ''}`} ref={viewportRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}>
+                <div className="visual-panel__image-wrap">
                   <div className="visual-panel__toolbar" aria-label="Controles del visor">
                     <div className="visual-panel__toolbar-group" aria-label="Navegación de páginas">
                       <button type="button" onClick={goToPreviousPage} disabled={panelLoading || isFirstPage}>Anterior</button>
@@ -490,21 +387,15 @@ function VisualSparePartsSearchPage() {
                       <button type="button" onClick={submitGoToPage} disabled={panelLoading || !goToPageValue}>Ir</button>
                       <button type="button" onClick={goToNextPage} disabled={panelLoading || isLastPage}>Siguiente</button>
                     </div>
-                    <div className="visual-panel__toolbar-group" aria-label="Zoom de imagen">
-                      <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom - VISUAL_ZOOM_STEP)} disabled={isMinZoom} aria-label="Alejar imagen">Zoom −</button>
-                      <span className="visual-panel__zoom-value">{Math.round(zoom * 100)}%</span>
-                      <button type="button" onClick={() => updateZoom((currentZoom) => currentZoom + VISUAL_ZOOM_STEP)} disabled={isMaxZoom} aria-label="Acercar imagen">Zoom +</button>
-                      <button type="button" onClick={resetVisualView} disabled={zoom === 1 && pan.x === 0 && pan.y === 0}>Restablecer</button>
-                    </div>
                   </div>
-                  <div className="visual-panel__image-stage" style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}>
+                  <div className="visual-panel__image-stage">
                   <img src={`${apiUrl}${panelData.imageUrl}`} alt={`Despiece ${panelData.manualNombre} página ${panelData.pagina}`} draggable="false" />
                   {(panelData.puntos || []).map((point) => (
                     <button
                       className={`visual-panel__marker${selectedPanelPoint?.id === point.id ? ' visual-panel__marker--selected' : ''}${pulsePointId === point.id ? ' visual-panel__marker--pulse' : ''}`}
                       type="button"
                       key={point.id}
-                      style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%`, '--marker-scale': markerScale }}
+                      style={{ left: `${point.xPercent}%`, top: `${point.yPercent}%` }}
                       onClick={() => setSelectedPanelPoint(point)}
                       onKeyDown={(event) => { if (event.key === 'Enter') setSelectedPanelPoint(point); }}
                       aria-label={`Ver referencia ${point.referenciaDespiece}: ${getDisplayValue(point.descripcion)}`}
