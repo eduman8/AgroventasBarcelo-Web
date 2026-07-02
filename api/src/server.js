@@ -17,6 +17,7 @@ import machinesRoutes from './routes/machinesRoutes.js';
 import machineImagesRoutes from './routes/machineImagesRoutes.js';
 import manualSparePartsSearchRoutes from './routes/manualSparePartsSearchRoutes.js';
 import visualSparePartsPanelRoutes from './routes/visualSparePartsPanelRoutes.js';
+import manualPointsRoutes from './routes/manualPointsRoutes.js';
 import setupRoutes from './routes/setupRoutes.js';
 import { requireAdmin } from './middleware/requireAdmin.js';
 import { requireActiveUser, requireAuth } from './middleware/requireAuth.js';
@@ -49,6 +50,7 @@ app.use('/api', adminUsersRoutes);
 app.use('/api', machinesRoutes);
 app.use('/api', manualSparePartsSearchRoutes);
 app.use('/api', visualSparePartsPanelRoutes);
+app.use('/api', manualPointsRoutes);
 app.use('/api', sparePartsRoutes);
 
 app.get('/api/health', (request, response) => {
