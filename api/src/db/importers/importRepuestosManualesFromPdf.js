@@ -650,7 +650,7 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
   return spareParts;
 };
 
-const insertSparePartIfMissing = async (pool, sparePart, debugInsertFilters = getDebugInsertFilters()) => {
+const insertSparePartIfMissing = async (pool, sparePart, debugInsertFilters = getDebugInsertFilters(), { dryRun = false } = {}) => {
   const sqlParameters = buildInsertSqlParameters(sparePart);
   const debugThisInsert = shouldDebugInsert(sparePart, debugInsertFilters);
 
@@ -667,85 +667,175 @@ const insertSparePartIfMissing = async (pool, sparePart, debugInsertFilters = ge
     .input('Descripcion', sql.NVarChar(500), sqlParameters.Descripcion)
     .input('ReferenciaDespiece', sql.NVarChar(150), sqlParameters.ReferenciaDespiece)
     .input('Categoria', sql.NVarChar(150), sqlParameters.Categoria)
+    .input('DryRun', sql.Bit, dryRun ? 1 : 0)
     .query(`
+DECLARE @updatedCategory INT = 0;
+DECLARE @nullReferenceRepairCandidates INT = 0;
+DECLARE @ambiguousSkipped INT = 0;
+
 IF EXISTS (
     SELECT 1
     FROM dbo.RepuestosManuales
-    WHERE (
-        Codigo = @Codigo
-        AND ManualNombre = @ManualNombre
-        AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
-        AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
-    )
-    OR (
-        Codigo = @Codigo
-        AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)))
-    )
-)
-BEGIN
-    DECLARE @updatedCategory INT = 0;
-
-    UPDATE dbo.RepuestosManuales
-    SET Pagina = @Pagina,
-        PaginaImpresa = COALESCE(PaginaImpresa, @PaginaImpresa)
     WHERE Codigo = @Codigo
       AND ManualNombre = @ManualNombre
-      AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
-      AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '');
+      AND ArchivoOrigen = @ArchivoOrigen
+      AND Pagina = @Pagina
+      AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
+      AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)))
+)
 
-    IF NULLIF(LTRIM(RTRIM(@Categoria)), '') IS NOT NULL
+BEGIN
+    IF @DryRun = 1
+    BEGIN
+        SELECT CAST(0 AS INT) AS inserted,
+               CAST(1 AS INT) AS duplicated,
+               CAST(0 AS INT) AS updatedCategory,
+               @nullReferenceRepairCandidates AS nullReferenceRepairCandidates,
+               @ambiguousSkipped AS ambiguousSkipped;
+    END
+    ELSE
     BEGIN
         UPDATE dbo.RepuestosManuales
-        SET Categoria = @Categoria
+        SET PaginaImpresa = COALESCE(PaginaImpresa, @PaginaImpresa)
         WHERE Codigo = @Codigo
           AND ManualNombre = @ManualNombre
-          AND (Pagina = @Pagina OR Pagina = @PaginaImpresa)
+          AND ArchivoOrigen = @ArchivoOrigen
+          AND Pagina = @Pagina
           AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
-          AND (
-            NULLIF(LTRIM(RTRIM(Categoria)), '') IS NULL
-            OR LTRIM(RTRIM(Categoria)) IN (N'Sin categoría', N'Sin categoria')
-          );
+          AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)));
 
-        SET @updatedCategory = @@ROWCOUNT;
+        IF NULLIF(LTRIM(RTRIM(@Categoria)), '') IS NOT NULL
+        BEGIN
+            UPDATE dbo.RepuestosManuales
+            SET Categoria = @Categoria
+            WHERE Codigo = @Codigo
+              AND ManualNombre = @ManualNombre
+              AND ArchivoOrigen = @ArchivoOrigen
+              AND Pagina = @Pagina
+              AND COALESCE(NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), ''), '') = COALESCE(NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), ''), '')
+              AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)))
+              AND (
+                NULLIF(LTRIM(RTRIM(Categoria)), '') IS NULL
+                OR LTRIM(RTRIM(Categoria)) IN (N'Sin categoría', N'Sin categoria')
+              );
+
+            SET @updatedCategory = @@ROWCOUNT;
+        END;
+
+        SELECT CAST(0 AS INT) AS inserted,
+               CAST(1 AS INT) AS duplicated,
+               @updatedCategory AS updatedCategory,
+               @nullReferenceRepairCandidates AS nullReferenceRepairCandidates,
+               @ambiguousSkipped AS ambiguousSkipped;
     END;
-
-    SELECT CAST(0 AS INT) AS inserted, CAST(1 AS INT) AS duplicated, @updatedCategory AS updatedCategory;
 END
 ELSE
 BEGIN
-    INSERT INTO dbo.RepuestosManuales (
-        ManualNombre,
-        ArchivoOrigen,
-        Pagina,
-        PaginaImpresa,
-        Codigo,
-        Descripcion,
-        ReferenciaDespiece,
-        Categoria,
-        Activo
-    )
-    VALUES (
-        @ManualNombre,
-        @ArchivoOrigen,
-        @Pagina,
-        @PaginaImpresa,
-        @Codigo,
-        @Descripcion,
-        @ReferenciaDespiece,
-        @Categoria,
-        1
-    );
+    IF NULLIF(LTRIM(RTRIM(@ReferenciaDespiece)), '') IS NOT NULL
+    BEGIN
+        SELECT @nullReferenceRepairCandidates = COUNT(1)
+        FROM dbo.RepuestosManuales
+        WHERE Codigo = @Codigo
+          AND ManualNombre = @ManualNombre
+          AND ArchivoOrigen = @ArchivoOrigen
+          AND Pagina = @Pagina
+          AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)))
+          AND NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), '') IS NULL;
+    END;
 
-    SELECT CAST(1 AS INT) AS inserted, CAST(0 AS INT) AS duplicated, CAST(0 AS INT) AS updatedCategory;
+    IF @nullReferenceRepairCandidates = 1
+    BEGIN
+        IF @DryRun = 1
+        BEGIN
+            SELECT CAST(0 AS INT) AS inserted,
+                   CAST(0 AS INT) AS duplicated,
+                   CAST(0 AS INT) AS updatedCategory,
+                   CAST(1 AS INT) AS nullReferenceRepairCandidates,
+                   CAST(0 AS INT) AS ambiguousSkipped;
+        END
+        ELSE
+        BEGIN
+        UPDATE dbo.RepuestosManuales
+        SET ReferenciaDespiece = @ReferenciaDespiece,
+            PaginaImpresa = COALESCE(PaginaImpresa, @PaginaImpresa),
+            UpdatedAt = SYSUTCDATETIME()
+        WHERE Codigo = @Codigo
+          AND ManualNombre = @ManualNombre
+          AND ArchivoOrigen = @ArchivoOrigen
+          AND Pagina = @Pagina
+          AND UPPER(LTRIM(RTRIM(Descripcion))) = UPPER(LTRIM(RTRIM(@Descripcion)))
+          AND NULLIF(LTRIM(RTRIM(ReferenciaDespiece)), '') IS NULL;
+
+        SELECT CAST(0 AS INT) AS inserted,
+               CAST(0 AS INT) AS duplicated,
+               CAST(0 AS INT) AS updatedCategory,
+               CAST(1 AS INT) AS nullReferenceRepairCandidates,
+               CAST(0 AS INT) AS ambiguousSkipped;
+        END;
+    END
+    ELSE IF @nullReferenceRepairCandidates > 1
+    BEGIN
+        SET @ambiguousSkipped = @nullReferenceRepairCandidates;
+
+        SELECT CAST(0 AS INT) AS inserted,
+               CAST(0 AS INT) AS duplicated,
+               CAST(0 AS INT) AS updatedCategory,
+               @nullReferenceRepairCandidates AS nullReferenceRepairCandidates,
+               @ambiguousSkipped AS ambiguousSkipped;
+    END
+    ELSE
+    BEGIN
+        IF @DryRun = 1
+        BEGIN
+            SELECT CAST(1 AS INT) AS inserted,
+                   CAST(0 AS INT) AS duplicated,
+                   CAST(0 AS INT) AS updatedCategory,
+                   CAST(0 AS INT) AS nullReferenceRepairCandidates,
+                   CAST(0 AS INT) AS ambiguousSkipped;
+        END
+        ELSE
+        BEGIN
+        INSERT INTO dbo.RepuestosManuales (
+            ManualNombre,
+            ArchivoOrigen,
+            Pagina,
+            PaginaImpresa,
+            Codigo,
+            Descripcion,
+            ReferenciaDespiece,
+            Categoria,
+            Activo
+        )
+        VALUES (
+            @ManualNombre,
+            @ArchivoOrigen,
+            @Pagina,
+            @PaginaImpresa,
+            @Codigo,
+            @Descripcion,
+            @ReferenciaDespiece,
+            @Categoria,
+            1
+        );
+
+        SELECT CAST(1 AS INT) AS inserted,
+               CAST(0 AS INT) AS duplicated,
+               CAST(0 AS INT) AS updatedCategory,
+               CAST(0 AS INT) AS nullReferenceRepairCandidates,
+               CAST(0 AS INT) AS ambiguousSkipped;
+        END;
+    END;
 END;
 `);
 
-  const counters = result.recordset?.[0] ?? { inserted: 0, duplicated: 0, updatedCategory: 0 };
+  const counters = result.recordset?.[0] ?? { inserted: 0, duplicated: 0, updatedCategory: 0, nullReferenceRepairCandidates: 0, ambiguousSkipped: 0 };
 
   const normalizedCounters = {
     inserted: Number(counters.inserted) || 0,
     duplicated: Number(counters.duplicated) || 0,
-    updatedCategory: Number(counters.updatedCategory) || 0
+    updatedCategory: Number(counters.updatedCategory) || 0,
+    nullReferenceRepairCandidates: Number(counters.nullReferenceRepairCandidates) || 0,
+    ambiguousSkipped: Number(counters.ambiguousSkipped) || 0
   };
 
   if (debugThisInsert) {
@@ -974,6 +1064,8 @@ const previewPdfImport = async (pdfConfig) => {
     duplicated: 0,
     categorizedNew: 0,
     updatedExistingWithCategory: 0,
+    nullReferenceRepairCandidates: 0,
+    ambiguousSkipped: 0,
     uncategorized: spareParts.length - categorizedDetected,
     withReferenciaDespiece: spareParts.filter((sparePart) => sparePart.referenciaDespiece).length,
     withoutReferenciaDespiece: spareParts.filter((sparePart) => !sparePart.referenciaDespiece).length,
@@ -981,17 +1073,20 @@ const previewPdfImport = async (pdfConfig) => {
   };
 };
 
-const importPdf = async ({ pool, manualNombre, archivoOrigen }) => {
+const importPdf = async ({ pool, manualNombre, archivoOrigen, dryRun = false }) => {
   const { pages, spareParts } = await buildImportPreview({ manualNombre, archivoOrigen });
   const categorizedDetected = spareParts.filter((sparePart) => sparePart.categoria).length;
   const summary = {
     pdf: archivoOrigen,
+    dryRun,
     pagesRead: pages.length,
     detected: spareParts.length,
     inserted: 0,
     duplicated: 0,
     categorizedNew: 0,
     updatedExistingWithCategory: 0,
+    nullReferenceRepairCandidates: 0,
+    ambiguousSkipped: 0,
     uncategorized: spareParts.length - categorizedDetected,
     withReferenciaDespiece: spareParts.filter((sparePart) => sparePart.referenciaDespiece).length,
     withoutReferenciaDespiece: spareParts.filter((sparePart) => !sparePart.referenciaDespiece).length,
@@ -1001,10 +1096,12 @@ const importPdf = async ({ pool, manualNombre, archivoOrigen }) => {
   const debugInsertFilters = getDebugInsertFilters();
 
   for (const sparePart of spareParts) {
-    const counters = await insertSparePartIfMissing(pool, sparePart, debugInsertFilters);
+    const counters = await insertSparePartIfMissing(pool, sparePart, debugInsertFilters, { dryRun });
     summary.inserted += counters.inserted;
     summary.duplicated += counters.duplicated;
     summary.updatedExistingWithCategory += counters.updatedCategory;
+    summary.nullReferenceRepairCandidates += counters.nullReferenceRepairCandidates;
+    summary.ambiguousSkipped += counters.ambiguousSkipped;
 
     if (counters.inserted && sparePart.categoria) {
       summary.categorizedNew += counters.inserted;
@@ -1018,11 +1115,13 @@ const printSummary = (summary) => {
   console.log(`PDF procesado: ${summary.pdf}`);
   console.log(`  Páginas leídas: ${summary.pagesRead}`);
   console.log(`  Registros detectados: ${summary.detected}`);
-  console.log(`  Registros insertados: ${summary.inserted}`);
+  console.log(`  Registros ${summary.dryRun ? 'a insertar (dry-run)' : 'insertados'}: ${summary.inserted}`);
   console.log(`  Registros categorizados nuevos: ${summary.categorizedNew}`);
   console.log(`  Registros existentes actualizados con categoría: ${summary.updatedExistingWithCategory}`);
   console.log(`  Registros que siguen sin categoría: ${summary.uncategorized}`);
-  console.log(`  Registros omitidos por duplicados: ${summary.duplicated}`);
+  console.log(`  Registros omitidos por duplicados reales: ${summary.duplicated}`);
+  console.log(`  Candidatos a reparar ReferenciaDespiece NULL: ${summary.nullReferenceRepairCandidates}`);
+  console.log(`  Ambiguos omitidos: ${summary.ambiguousSkipped}`);
   console.log(`  Registros con ReferenciaDespiece detectada: ${summary.withReferenciaDespiece}`);
   console.log(`  Registros sin ReferenciaDespiece: ${summary.withoutReferenciaDespiece}`);
 
@@ -1039,7 +1138,7 @@ async function runImporter() {
   const dryRun = process.argv.includes('--dry-run');
   const debugPage = getCliOption('debug-page');
   const debugManual = getCliOption('debug-manual');
-  const pool = dryRun ? null : await getSqlPool();
+  const pool = await getSqlPool();
   const summaries = [];
 
   for (const pdfConfig of PDFS_TO_IMPORT) {
@@ -1047,9 +1146,7 @@ async function runImporter() {
       continue;
     }
 
-    const summary = dryRun
-      ? await previewPdfImport(pdfConfig)
-      : await importPdf({ pool, ...pdfConfig });
+    const summary = await importPdf({ pool, ...pdfConfig, dryRun });
     if (debugPage) {
       const { pages, spareParts } = await buildImportPreview(pdfConfig);
       printDebugPages({ pages, spareParts, pdfConfig, debugPage });
@@ -1066,6 +1163,8 @@ async function runImporter() {
     duplicated: accumulator.duplicated + summary.duplicated,
     categorizedNew: accumulator.categorizedNew + summary.categorizedNew,
     updatedExistingWithCategory: accumulator.updatedExistingWithCategory + summary.updatedExistingWithCategory,
+    nullReferenceRepairCandidates: accumulator.nullReferenceRepairCandidates + summary.nullReferenceRepairCandidates,
+    ambiguousSkipped: accumulator.ambiguousSkipped + summary.ambiguousSkipped,
     uncategorized: accumulator.uncategorized + summary.uncategorized,
     withReferenciaDespiece: accumulator.withReferenciaDespiece + summary.withReferenciaDespiece,
     withoutReferenciaDespiece: accumulator.withoutReferenciaDespiece + summary.withoutReferenciaDespiece
@@ -1076,6 +1175,8 @@ async function runImporter() {
     duplicated: 0,
     categorizedNew: 0,
     updatedExistingWithCategory: 0,
+    nullReferenceRepairCandidates: 0,
+    ambiguousSkipped: 0,
     uncategorized: 0,
     withReferenciaDespiece: 0,
     withoutReferenciaDespiece: 0
@@ -1089,7 +1190,9 @@ async function runImporter() {
   console.log(`  Registros categorizados nuevos: ${totals.categorizedNew}`);
   console.log(`  Registros existentes actualizados con categoría: ${totals.updatedExistingWithCategory}`);
   console.log(`  Registros que siguen sin categoría: ${totals.uncategorized}`);
-  console.log(`  Registros omitidos por duplicados: ${totals.duplicated}`);
+  console.log(`  Registros omitidos por duplicados reales: ${totals.duplicated}`);
+  console.log(`  Candidatos a reparar ReferenciaDespiece NULL: ${totals.nullReferenceRepairCandidates}`);
+  console.log(`  Ambiguos omitidos: ${totals.ambiguousSkipped}`);
   console.log(`  Registros con ReferenciaDespiece detectada: ${totals.withReferenciaDespiece}`);
   console.log(`  Registros sin ReferenciaDespiece: ${totals.withoutReferenciaDespiece}`);
 }
