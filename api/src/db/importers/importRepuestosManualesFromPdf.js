@@ -347,7 +347,7 @@ const detectPrintedPageNumber = (lines, fallbackPageNumber) => {
     : fallbackPageNumber;
 };
 
-const buildLinesFromItems = (items) => {
+const buildLineGroupsFromItems = (items) => {
   const lines = [];
   const sortedItems = [...items].sort((first, second) => {
     const yDifference = second.y - first.y;
@@ -372,12 +372,21 @@ const buildLinesFromItems = (items) => {
     lines.push({ y: item.y, items: [item] });
   }
 
-  return lines.map((line) => normalizeText(line.items
-    .sort((first, second) => first.x - second.x || first.order - second.order)
-    .map((item) => item.text)
-    .join(' ')))
-    .filter(Boolean);
+  return lines
+    .map((line) => {
+      const sortedLineItems = line.items.sort((first, second) => first.x - second.x || first.order - second.order);
+      const text = normalizeText(sortedLineItems.map((item) => item.text).join(' '));
+
+      return {
+        y: line.y,
+        text,
+        tokens: sortedLineItems.map((item) => ({ text: item.text, x: item.x, y: item.y, order: item.order }))
+      };
+    })
+    .filter((line) => line.text);
 };
+
+const buildLinesFromItems = (items) => buildLineGroupsFromItems(items).map((line) => line.text);
 
 const extractPdfPages = async (pdfPath) => {
   const buffer = await readFile(pdfPath);
@@ -392,12 +401,17 @@ const extractPdfPages = async (pdfPath) => {
       .map(getStreamContent)
       .join('\n');
     const items = extractTextItems(pageContent, page.fontReferences, fontMapsByObject);
-    const lines = buildLinesFromItems(items);
+    const lineGroups = buildLineGroupsFromItems(items);
+    const lines = lineGroups.map((line) => line.text);
 
     return {
       pageNumber: index + 1,
       printedPageNumber: detectPrintedPageNumber(lines, index + 1),
-      lines
+      rawText: items.map((item) => item.text).join('\n'),
+      textItems: items,
+      lineGroups,
+      lines,
+      debugDetections: []
     };
   });
 };
@@ -467,7 +481,19 @@ const isLikelyStandaloneDescriptionLine = (line) => {
   return true;
 };
 
-const detectSparePartsInLine = ({ line, pageNumber, printedPageNumber, manualNombre, archivoOrigen }) => {
+const explainNullReference = ({ rawBefore, source }) => {
+  if (source === 'standalone-code-description-block') {
+    return 'El código fue detectado en una línea independiente; este patrón no contiene columna/valor de referencia asociado.';
+  }
+
+  if (!normalizeText(rawBefore)) {
+    return 'No hay texto antes del código en la línea reconstruida; la referencia no quedó asociada al código.';
+  }
+
+  return `El texto antes del código ("${normalizeText(rawBefore)}") no empieza con un número de referencia válido.`;
+};
+
+const detectSparePartsInLine = ({ line, lineIndex = null, pageNumber, printedPageNumber, manualNombre, archivoOrigen, debugDetections = null }) => {
   const results = [];
   const matches = [...line.matchAll(codePattern)];
 
@@ -480,9 +506,23 @@ const detectSparePartsInLine = ({ line, pageNumber, printedPageNumber, manualNom
     const after = cleanDescription(line.slice(match.index + rawCodigo.length));
     const descripcion = looksLikeUsefulDescription(after) ? after : before;
 
+    const debugDetection = {
+      source: 'inline-code',
+      lineIndex,
+      line,
+      tokens: normalizeText(line).split(' ').filter(Boolean),
+      referenciaDetectada: referenciaDespiece,
+      codigoDetectado: codigo,
+      descripcionDetectada: descripcion || null,
+      motivoReferenciaNull: referenciaDespiece ? null : explainNullReference({ rawBefore, source: 'inline-code' })
+    };
+
     if (!looksLikeUsefulDescription(descripcion)) {
+      debugDetections?.push({ ...debugDetection, descartado: true, motivoDescarte: 'La descripción detectada no parece útil.' });
       continue;
     }
+
+    debugDetections?.push({ ...debugDetection, descartado: false });
 
     results.push({
       manualNombre,
@@ -515,7 +555,7 @@ const findNextUsefulLine = (lines, startIndex) => {
   return null;
 };
 
-const detectStandaloneCodeDescriptionBlock = ({ lines, lineIndex, pageNumber, printedPageNumber, manualNombre, archivoOrigen }) => {
+const detectStandaloneCodeDescriptionBlock = ({ lines, lineIndex, pageNumber, printedPageNumber, manualNombre, archivoOrigen, debugDetections = null }) => {
   const line = cleanDescription(lines[lineIndex]);
 
   if (!isCodeOnlyLine(line)) {
@@ -527,6 +567,18 @@ const detectStandaloneCodeDescriptionBlock = ({ lines, lineIndex, pageNumber, pr
   if (!description || !isLikelyStandaloneDescriptionLine(description)) {
     return null;
   }
+
+  debugDetections?.push({
+    source: 'standalone-code-description-block',
+    lineIndex,
+    line,
+    tokens: normalizeText(line).split(' ').filter(Boolean),
+    referenciaDetectada: null,
+    codigoDetectado: normalizeCode(line),
+    descripcionDetectada: description,
+    motivoReferenciaNull: explainNullReference({ rawBefore: '', source: 'standalone-code-description-block' }),
+    descartado: false
+  });
 
   return {
     manualNombre,
@@ -556,30 +608,6 @@ const addSparePartIfNew = ({ sparePart, spareParts, seen, seenCodePage }) => {
 };
 
 
-const inferMissingReferencesSafely = (spareParts) => {
-  const pages = new Map();
-  for (const part of spareParts) {
-    const key = `${part.manualNombre}|${part.archivoOrigen}|${part.pagina}`;
-    if (!pages.has(key)) pages.set(key, []);
-    pages.get(key).push(part);
-  }
-
-  for (const pageParts of pages.values()) {
-    const firstReferencedIndex = pageParts.findIndex((part) => /^\d+$/.test(String(part.referenciaDespiece ?? '').trim()));
-    if (firstReferencedIndex <= 0) continue;
-
-    const nullPrefix = pageParts.slice(0, firstReferencedIndex).filter((part) => !String(part.referenciaDespiece ?? '').trim());
-    const firstReference = Number.parseInt(pageParts[firstReferencedIndex].referenciaDespiece, 10);
-
-    if (Number.isInteger(firstReference) && firstReference === 2 && nullPrefix.length === 1) {
-      nullPrefix[0].referenciaDespiece = '1';
-      nullPrefix[0].referenciaInferida = 'prefix-sequence-before-2';
-    }
-  }
-
-  return spareParts;
-};
-
 const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
   const spareParts = [];
   const seen = new Set();
@@ -589,10 +617,12 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
     page.lines.forEach((line, lineIndex) => {
       const detectedInLine = detectSparePartsInLine({
         line,
+        lineIndex,
         pageNumber: page.pageNumber,
         printedPageNumber: page.printedPageNumber,
         manualNombre,
-        archivoOrigen
+        archivoOrigen,
+        debugDetections: page.debugDetections
       });
 
       for (const sparePart of detectedInLine) {
@@ -605,7 +635,8 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
         pageNumber: page.pageNumber,
         printedPageNumber: page.printedPageNumber,
         manualNombre,
-        archivoOrigen
+        archivoOrigen,
+        debugDetections: page.debugDetections
       });
 
       if (!standaloneSparePart || seenCodePage.has(buildCodePageKey(standaloneSparePart))) {
@@ -616,7 +647,7 @@ const detectSpareParts = ({ pages, manualNombre, archivoOrigen }) => {
     });
   }
 
-  return inferMissingReferencesSafely(spareParts);
+  return spareParts;
 };
 
 const insertSparePartIfMissing = async (pool, sparePart) => {
@@ -739,6 +770,72 @@ const buildVisualVerification = ({ manualNombre, spareParts }) => visualVerifica
     })
   }));
 
+const getCliOption = (name) => {
+  const prefix = `--${name}=`;
+  const argument = process.argv.find((value) => value.startsWith(prefix));
+
+  return argument ? argument.slice(prefix.length) : null;
+};
+
+const shouldDebugPage = (page, debugPage) => {
+  if (!debugPage) {
+    return false;
+  }
+
+  const parsedDebugPage = Number.parseInt(debugPage, 10);
+
+  return page.pageNumber === parsedDebugPage || page.printedPageNumber === parsedDebugPage;
+};
+
+const printPageDebug = ({ pdfConfig, page, spareParts }) => {
+  const pageParts = spareParts.filter((sparePart) => sparePart.pagina === page.pageNumber);
+
+  console.log(`\nDEBUG importador PDF: ${pdfConfig.manualNombre} / ${pdfConfig.archivoOrigen}`);
+  console.log(`Página interna=${page.pageNumber}; Página impresa=${page.printedPageNumber}`);
+  console.log('\n[Texto crudo extraído]');
+  console.log(page.rawText || '(sin texto extraído)');
+
+  console.log('\n[Líneas reconstruidas]');
+  page.lineGroups.forEach((line, index) => {
+    console.log(`${index + 1}. y=${line.y}: ${line.text}`);
+  });
+
+  console.log('\n[Tokens por línea]');
+  page.lineGroups.forEach((line, index) => {
+    const tokens = line.tokens.map((token) => `${token.text} (x=${token.x}, y=${token.y}, orden=${token.order})`).join(' | ');
+    console.log(`${index + 1}. ${tokens}`);
+  });
+
+  console.log('\n[Detecciones por línea]');
+  if (!page.debugDetections.length) {
+    console.log('(sin detecciones)');
+  }
+  for (const detection of page.debugDetections) {
+    console.log(JSON.stringify(detection, null, 2));
+  }
+
+  console.log('\n[Registros detectados para importar en esta página]');
+  if (!pageParts.length) {
+    console.log('(sin registros)');
+  }
+  for (const part of pageParts) {
+    console.log(JSON.stringify({
+      referenciaDespiece: part.referenciaDespiece ?? null,
+      codigo: part.codigo,
+      descripcion: part.descripcion,
+      categoria: part.categoria ?? null
+    }, null, 2));
+  }
+};
+
+const printDebugPages = ({ pages, spareParts, pdfConfig, debugPage }) => {
+  for (const page of pages) {
+    if (shouldDebugPage(page, debugPage)) {
+      printPageDebug({ pdfConfig, page, spareParts });
+    }
+  }
+};
+
 const previewPdfImport = async (pdfConfig) => {
   const { pages, spareParts } = await buildImportPreview(pdfConfig);
   const categorizedDetected = spareParts.filter((sparePart) => sparePart.categoria).length;
@@ -812,13 +909,24 @@ const printSummary = (summary) => {
 
 async function runImporter() {
   const dryRun = process.argv.includes('--dry-run');
+  const debugPage = getCliOption('debug-page');
+  const debugManual = getCliOption('debug-manual');
   const pool = dryRun ? null : await getSqlPool();
   const summaries = [];
 
   for (const pdfConfig of PDFS_TO_IMPORT) {
+    if (debugManual && pdfConfig.manualNombre.toLocaleLowerCase('es-AR') !== debugManual.toLocaleLowerCase('es-AR')) {
+      continue;
+    }
+
     const summary = dryRun
       ? await previewPdfImport(pdfConfig)
       : await importPdf({ pool, ...pdfConfig });
+    if (debugPage) {
+      const { pages, spareParts } = await buildImportPreview(pdfConfig);
+      printDebugPages({ pages, spareParts, pdfConfig, debugPage });
+    }
+
     printSummary(summary);
     summaries.push(summary);
   }
