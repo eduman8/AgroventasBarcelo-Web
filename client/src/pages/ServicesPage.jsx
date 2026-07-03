@@ -1,8 +1,14 @@
 import Button from '../components/ui/Button.jsx';
+import {
+  Tractor,
+  Package,
+  Headset,
+  Wrench,
+} from "lucide-react";
 
 const services = [
   {
-    icon: '🚜',
+    icon: <Tractor size={34} strokeWidth={2.2} />,
     title: 'Venta de maquinaria',
     description:
       'Maquinaria agrícola seleccionada para responder a las necesidades reales de cada productor y tipo de trabajo.',
@@ -15,7 +21,7 @@ const services = [
     href: '/maquinarias'
   },
   {
-    icon: '◎',
+    icon: <Package size={34} strokeWidth={2.2} />,
     title: 'Venta de repuestos',
     description:
       'Repuestos agrícolas para mantener los equipos operativos y reducir tiempos de parada en plena campaña.',
@@ -28,7 +34,7 @@ const services = [
     href: '/repuestos'
   },
   {
-    icon: '☏',
+    icon: <Headset size={34} strokeWidth={2.2} />,
     title: 'Servicio postventa',
     description:
       'Asistencia técnica y seguimiento para acompañar el rendimiento de la maquinaria después de la compra.',
@@ -41,7 +47,7 @@ const services = [
     href: '/contacto?servicio=postventa'
   },
   {
-    icon: '⚙',
+    icon: <Wrench size={34} strokeWidth={2.2} />,
     title: 'Mecanizado CNC',
     description:
       'Fabricación y mecanizado de piezas con precisión para resolver necesidades específicas del sector agropecuario.',
