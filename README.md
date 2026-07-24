@@ -1,161 +1,127 @@
 # AgroVentas Barceló
 
-Agricultural business platform developed for AgroVentas Barceló, focused on agricultural machinery, spare parts, and customer inquiry management.
+Plataforma full-stack para AgroVentas Barceló, construida con React + Vite en el cliente y Node.js + Express en la API. El sistema publica maquinaria, repuestos, servicios y formularios de consulta, e incluye paneles administrativos protegidos para gestión operativa.
 
-This project is being built as a real-world business solution, combining a modern web application with the company's existing inventory infrastructure and future Microsoft SQL Server integration.
+## Stack
 
----
+* **Frontend:** React, Vite, JavaScript.
+* **Backend:** Node.js, Express.
+* **Base de datos:** Microsoft SQL Server mediante `mssql`.
+* **Integraciones:** SMTP para consultas por email y WhatsApp para contacto comercial.
 
-## Overview
+## Estructura
 
-AgroVentas Barceló provides agricultural machinery sales, spare parts distribution, and technical support for producers and contractors.
+```text
+client/   Aplicación web React + Vite
+api/      API Express, controladores, rutas, servicios y scripts SQL Server
+```
 
-The objective of this platform is to centralize product information, simplify customer communication, and create a scalable digital foundation for future business operations.
+## Requisitos
 
----
+* Node.js compatible con los paquetes del repositorio.
+* npm con soporte de workspaces.
+* SQL Server accesible desde la API.
+* Credenciales SMTP si se enviarán consultas por correo.
 
-## Features
+## Configuración local
 
-### Spare Parts Catalog
+1. Instalar dependencias:
 
-* Searchable spare parts catalog
-* Category-based filtering
-* Pagination system
-* Product detail pages
-* Availability indicators
-* Inquiry-based purchasing workflow
+   ```bash
+   npm install
+   ```
 
-### Machinery Section
+2. Crear variables de entorno:
 
-* Machinery showcase
-* Technical specifications
-* Product image galleries
-* Contact-driven lead generation
+   ```bash
+   cp api/.env.example api/.env
+   cp client/.env.example client/.env
+   ```
 
-### Services Section
+3. Completar `api/.env` con los datos reales de SQL Server, JWT y SMTP.
 
-* Company services presentation
-* Agricultural equipment support information
-* Customer assistance channels
+4. Ejecutar en desarrollo:
 
-### Customer Inquiries
+   ```bash
+   npm run dev
+   ```
 
-* Product inquiry requests
-* WhatsApp integration
-* Email contact workflows
+También se puede iniciar cada workspace por separado:
 
-### Administration
+```bash
+npm run dev:client
+npm run dev:api
+```
 
-* Product management
-* Machinery management
-* Image management
-* Content administration
+## Variables de entorno principales de la API
 
----
+Ver `api/.env.example` para el listado completo. En producción son obligatorias como mínimo:
 
-## Technology Stack
+* `NODE_ENV=production`
+* `CLIENT_ORIGIN` con el dominio real del frontend. Acepta múltiples orígenes separados por coma.
+* `JWT_SECRET` con al menos 32 caracteres.
+* `DB_SERVER`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`.
 
-### Frontend
+La API valida variables críticas al iniciar en producción para fallar temprano ante configuración insegura o incompleta.
 
-* React
-* Vite
-* JavaScript
-* React Router
+## Seguridad HTTP aplicada
 
-### Backend
+La API incluye hardening mínimo sin cambiar la arquitectura existente:
 
-* Node.js
-* Express
+* CORS restringido por `CLIENT_ORIGIN`.
+* `express.json()` con límite configurable mediante `JSON_BODY_LIMIT_KB`.
+* Rate limiting global para `/api` y límite más estricto para `/api/auth/login`.
+* Encabezados de seguridad equivalentes a Helmet para `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, políticas cross-origin y HSTS cuando la petición llega por HTTPS.
+* Middleware global de 404 y errores para respuestas JSON consistentes.
+* `X-Powered-By` deshabilitado.
 
-### Database
+> Nota: `helmet` y `express-rate-limit` fueron evaluados como dependencias recomendadas, pero el entorno de instalación bloqueó el acceso al registro npm. Por estabilidad, se implementó el hardening equivalente de forma local y sin introducir cambios de arquitectura.
 
-* Microsoft SQL Server
+## Build y producción
 
-### Development Tools
+Generar el build del frontend:
 
-* Git
-* GitHub
+```bash
+npm run build
+```
 
----
+Iniciar la API en producción:
 
-## Project Structure
+```bash
+NODE_ENV=production npm run start:api
+```
 
-Current development is focused on building the public-facing platform before integrating the company's inventory database.
+### Checklist de deploy
 
-### Completed
+1. Configurar variables de `api/.env.example` en el proveedor de hosting/servidor.
+2. Usar `NODE_ENV=production`.
+3. Definir `CLIENT_ORIGIN` con el dominio público del frontend.
+4. Usar un `JWT_SECRET` fuerte y privado.
+5. Confirmar conectividad de SQL Server desde el servidor de API.
+6. Configurar SMTP si se enviarán emails desde el formulario de contacto.
+7. Ejecutar `npm run build` antes de publicar el cliente.
+8. Servir `client/dist` desde hosting estático o CDN y ejecutar la API Node detrás de proxy HTTPS.
 
-* Core frontend architecture
-* Navigation system
-* Spare parts catalog
-* Search functionality
-* Pagination system
-* Product detail pages
+## Scripts útiles
 
-### In Progress
+```bash
+npm run build
+npm run start:api
+npm run dev:client
+npm run dev:api
+npm run audit:catalog --workspace api
+npm run audit:catalog-exact-duplicates --workspace api
+```
 
-* Services section
-* Machinery module
-* Company information pages
+## Reglas de negocio
 
-### Pending
+* Los precios de maquinaria no se muestran públicamente.
+* Los precios de repuestos permanecen ocultos para clientes.
+* No se exponen cantidades exactas de stock.
+* La disponibilidad pública se muestra de forma simplificada.
+* Las consultas se gestionan directamente por AgroVentas Barceló.
+* Las imágenes de maquinaria y manuales visuales se administran desde paneles internos.
 
-* SQL Server integration
-* Administrative dashboard
-* Production deployment
+## Estado
 
----
-
-## Business Rules
-
-The platform follows specific client requirements:
-
-* Machinery prices are not displayed publicly.
-* Spare parts prices are hidden from customers.
-* Exact stock quantities are not exposed.
-* Product availability is shown only as **"Disponible"**.
-* Customer inquiries are handled directly by AgroVentas Barceló.
-* Product images can be managed through an administration panel.
-
----
-
-## Roadmap
-
-### Phase 1
-
-* Services page
-* Machinery page
-* About page
-* Contact page
-
-### Phase 2
-
-* Microsoft SQL Server integration
-* Inventory synchronization
-* Dynamic product management
-
-### Phase 3
-
-* Administrative dashboard
-* Production deployment
-* Performance optimizations
-
----
-
-## Project Status
-
-🚧 **Active Development**
-
-This project is currently under active development.
-
----
-
-## Author
-
-**Eduardo Gómez**
-
-Frontend / Full-Stack Developer
-
-GitHub: https://github.com/Eduman8
-
-LinkedIn: https://linkedin.com/in/eduardo-damián-gómez-89a432217
-
+Listo para validación final de producción, manteniendo la arquitectura existente y priorizando estabilidad sobre refactors amplios.
