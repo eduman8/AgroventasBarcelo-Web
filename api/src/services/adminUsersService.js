@@ -152,6 +152,15 @@ OUTPUT${userFieldsSelect.replaceAll('    ', '    INSERTED.')}
 WHERE ID_WebUsuario = @id;
 `;
 
+const updateUserRoleQuery = `
+UPDATE dbo.WebUsuarios
+SET
+    Rol = @rol,
+    FechaActualizacion = GETDATE()
+OUTPUT${userFieldsSelect.replaceAll('    ', '    INSERTED.')}
+WHERE ID_WebUsuario = @id;
+`;
+
 const parsePositiveInteger = (value) => {
   const parsedValue = Number.parseInt(value, 10);
 
@@ -172,6 +181,24 @@ const statusAliases = new Map([
   ['inactivo', 'Inactivo'],
   ['inactiva', 'Inactivo']
 ]);
+
+const roleAliases = new Map([
+  ['admin', 'Admin'],
+  ['administrador', 'Admin'],
+  ['cliente', 'Cliente'],
+  ['usuario', 'Cliente']
+]);
+
+export const normalizeUserRole = (value) => {
+  const normalizedValue = normalizeText(value, 50).toLocaleLowerCase('es-AR');
+  const normalizedRole = roleAliases.get(normalizedValue);
+
+  if (!normalizedRole) {
+    throw new AdminUserValidationError('El rol debe ser Usuario o Administrador.');
+  }
+
+  return normalizedRole;
+};
 
 export const normalizeUserStatus = (value) => {
   const normalizedValue = normalizeText(value, 50);
@@ -313,6 +340,26 @@ export const updateAdminUserStatus = async (id, status) => {
     .input('id', sql.Int, userId)
     .input('estado', sql.NVarChar(50), nextStatus)
     .query(updateUserStatusQuery);
+  const user = result.recordset?.[0];
+
+  return user ? mapUser(user) : null;
+};
+
+export const updateAdminUserRole = async (id, role) => {
+  const userId = parsePositiveInteger(id);
+
+  if (!userId) {
+    return null;
+  }
+
+  const nextRole = normalizeUserRole(role);
+  const pool = await getSqlPool();
+  await ensureUsersTable(pool);
+
+  const result = await pool.request()
+    .input('id', sql.Int, userId)
+    .input('rol', sql.NVarChar(50), nextRole)
+    .query(updateUserRoleQuery);
   const user = result.recordset?.[0];
 
   return user ? mapUser(user) : null;

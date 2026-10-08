@@ -5302,6 +5302,145 @@ h1 {
   padding: 0;
 }
 
+.site-menu-toggle {
+  display: none;
+}
+
+.admin-return-link {
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.admin-inquiry-detail__grid select {
+  max-width: 100%;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--color-ink);
+  font: inherit;
+}
+
+@media (max-width: 920px) {
+  .site-header {
+    position: sticky;
+  }
+
+  .site-header__inner {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    justify-items: stretch;
+    gap: 12px;
+    min-height: 76px;
+    padding: 10px 0;
+  }
+
+  .brand {
+    justify-self: start;
+  }
+
+  .logo--header {
+    height: 54px;
+    max-width: min(215px, 100%);
+  }
+
+  .site-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .site-menu-toggle:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: 2px;
+  }
+
+  .main-nav {
+    position: absolute;
+    z-index: 12;
+    top: calc(100% - 1px);
+    right: -12px;
+    left: -12px;
+    display: none;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0;
+    padding: 8px 16px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    background: #171a1b;
+    box-shadow: 0 12px 20px rgba(0, 0, 0, 0.28);
+  }
+
+  .main-nav.is-open {
+    display: flex;
+  }
+
+  .main-nav__links {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .main-nav__links a,
+  .main-nav__account a,
+  .main-nav__button {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 11px 4px;
+    text-align: left;
+  }
+
+  .main-nav a.is-active::after {
+    right: auto;
+    bottom: 5px;
+    margin: 0;
+  }
+
+  .main-nav__account {
+    margin: 8px 0 0;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    border-left: 0;
+  }
+}
+
+@media (min-width: 921px) {
+  .site-menu-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .site-header__inner {
+    width: min(100% - 24px, 1180px);
+  }
+
+  .admin-topbar__session {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .admin-topbar__status {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
 .login-page {
   display: grid;
   min-height: 62vh;

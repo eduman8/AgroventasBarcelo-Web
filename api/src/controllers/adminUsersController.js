@@ -2,6 +2,7 @@ import {
   AdminUserValidationError,
   getAdminUserById,
   getAdminUsers,
+  updateAdminUserRole,
   updateAdminUserStatus
 } from '../services/adminUsersService.js';
 
@@ -79,5 +80,23 @@ export const updateAdminUserStatusController = async (request, response) => {
     response.json(user);
   } catch (error) {
     handleAdminUserError('admin-user-status-update', error, response);
+  }
+};
+
+export const updateAdminUserRoleController = async (request, response) => {
+  try {
+    const user = await updateAdminUserRole(
+      request.params.id,
+      request.body?.rol ?? request.body?.role
+    );
+
+    if (!user) {
+      response.status(404).json({ status: 'error', message: 'Usuario no encontrado.' });
+      return;
+    }
+
+    response.json(user);
+  } catch (error) {
+    handleAdminUserError('admin-user-role-update', error, response);
   }
 };

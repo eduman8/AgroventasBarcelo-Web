@@ -1,4 +1,5 @@
 import { useAuth } from '../../context/AuthContext.jsx';
+import { ArrowLeft } from 'lucide-react';
 
 const adminNavItems = [
   { label: 'Dashboard', href: '/admin' },
@@ -45,6 +46,9 @@ function AdminLayout({ children, currentPath = '/admin' }) {
           </div>
           <div className="admin-topbar__session">
             <span className="admin-topbar__status">Sesión admin · {user?.email}</span>
+            <a className="button button--secondary admin-return-link" href="/">
+              <ArrowLeft size={17} aria-hidden="true" /> Volver al sitio
+            </a>
             <button className="button button--secondary" type="button" onClick={logout}>Cerrar sesión</button>
           </div>
         </header>

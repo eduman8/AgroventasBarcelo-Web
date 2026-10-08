@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout.jsx';
 import {
   getAdminUsers,
+  getValidUserRoles,
   getValidUserStatuses,
+  updateAdminUserRole,
   updateAdminUserStatus
 } from '../../services/adminUsersService.js';
 
@@ -61,6 +63,10 @@ function getStatusPillClassName(status) {
   return classNames.join(' ');
 }
 
+function getRoleLabel(role) {
+  return role === 'Admin' ? 'Administrador' : role === 'Cliente' ? 'Usuario' : role;
+}
+
 function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
@@ -73,6 +79,7 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
   const [updatingUserId, setUpdatingUserId] = useState(null);
 
   const statuses = getValidUserStatuses();
+  const roles = getValidUserRoles();
 
   useEffect(() => {
     let isMounted = true;
@@ -142,6 +149,25 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
     }
   }
 
+  async function handleRoleChange(userId, rol) {
+    setUpdatingUserId(userId);
+    setActionError('');
+    setSaveMessage('');
+
+    try {
+      const updatedUser = await updateAdminUserRole(userId, rol);
+      setUsers((currentUsers) => currentUsers.map((user) => (
+        String(user.id) === String(userId) ? updatedUser : user
+      )));
+      setSelectedUserId(updatedUser.id);
+      setSaveMessage(`Rol actualizado a ${roles.find((role) => role.value === rol)?.label || rol}.`);
+    } catch (currentError) {
+      setActionError(currentError.message);
+    } finally {
+      setUpdatingUserId(null);
+    }
+  }
+
   function handleClearFilters() {
     setStatusFilter(allStatusesFilterValue);
     setTextFilter('');
@@ -182,7 +208,19 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
           <div><dt>CUIT</dt><dd>{selectedUser.cuit || 'Sin CUIT'}</dd></div>
           <div><dt>Localidad</dt><dd>{selectedUser.localidad || 'Sin localidad'}</dd></div>
           <div><dt>Cargo</dt><dd>{selectedUser.cargo || 'Sin cargo informado'}</dd></div>
-          <div><dt>Rol</dt><dd>{selectedUser.rol}</dd></div>
+          <div>
+            <dt>Rol</dt>
+            <dd>
+              <select
+                aria-label={`Cambiar rol de ${selectedUser.nombre}`}
+                value={selectedUser.rol}
+                onChange={(event) => handleRoleChange(selectedUser.id, event.target.value)}
+                disabled={updatingUserId === selectedUser.id}
+              >
+                {roles.map((role) => <option value={role.value} key={role.value}>{role.label}</option>)}
+              </select>
+            </dd>
+          </div>
           <div><dt>Estado</dt><dd>{selectedUser.estado}</dd></div>
           <div><dt>Fecha de creación</dt><dd>{formatDate(selectedUser.fechaCreacion)}</dd></div>
           <div><dt>Fecha de actualización</dt><dd>{formatDate(selectedUser.fechaActualizacion)}</dd></div>
@@ -270,7 +308,7 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
                       <td data-label="Email">{user.email}</td>
                       <td data-label="Teléfono">{user.telefono || '-'}</td>
                       <td data-label="Empresa">{user.empresa || '-'}</td>
-                      <td data-label="Rol">{user.rol}</td>
+                      <td data-label="Rol">{getRoleLabel(user.rol)}</td>
                       <td data-label="Estado"><span className={getStatusPillClassName(user.estado)}>{user.estado}</span></td>
                       <td data-label="Fecha de creación">{formatDate(user.fechaCreacion)}</td>
                       <td data-label="Acciones">

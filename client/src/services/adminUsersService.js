@@ -3,6 +3,10 @@ import { getJsonHeaders } from './apiClient.js';
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const validUserStatuses = ['Activo', 'Inactivo'];
+const validUserRoles = [
+  { value: 'Cliente', label: 'Usuario' },
+  { value: 'Admin', label: 'Administrador' }
+];
 
 async function parseErrorMessage(response, fallbackMessage) {
   try {
@@ -35,6 +39,10 @@ export function getValidUserStatuses() {
   return validUserStatuses;
 }
 
+export function getValidUserRoles() {
+  return validUserRoles;
+}
+
 export async function getAdminUsers() {
   return fetchJson('/api/admin/usuarios', 'No se pudieron cargar los usuarios.');
 }
@@ -60,6 +68,20 @@ export async function updateAdminUserStatus(id, estado) {
       method: 'PATCH',
       body: JSON.stringify({ estado })
     }
+  );
+
+  if (!user) {
+    throw new Error('Usuario no encontrado.');
+  }
+
+  return user;
+}
+
+export async function updateAdminUserRole(id, rol) {
+  const user = await fetchJson(
+    `/api/admin/usuarios/${encodeURIComponent(id)}/rol`,
+    'No se pudo actualizar el rol del usuario.',
+    { method: 'PATCH', body: JSON.stringify({ rol }) }
   );
 
   if (!user) {
