@@ -1,6 +1,6 @@
 import { getJsonHeaders } from './apiClient.js';
 
-const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
 const validUserStatuses = ['Activo', 'Inactivo'];
 const validUserRoles = [

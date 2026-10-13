@@ -179,8 +179,8 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
     }
 
     return (
-      <article className="admin-inquiry-detail" aria-live="polite">
-        <div className="admin-inquiry-detail__header">
+      <article className="admin-inquiry-detail admin-user-detail" aria-live="polite">
+        <div className="admin-inquiry-detail__header admin-user-detail__header">
           <div>
             <p className="eyebrow">Detalle</p>
             <h3>{selectedUser.nombre}</h3>
@@ -200,7 +200,7 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
           </div>
         </div>
 
-        <dl className="admin-inquiry-detail__grid">
+        <dl className="admin-inquiry-detail__grid admin-user-detail__grid">
           <div><dt>Nombre</dt><dd>{selectedUser.nombre}</dd></div>
           <div><dt>Email</dt><dd>{selectedUser.email}</dd></div>
           <div><dt>Teléfono</dt><dd>{selectedUser.telefono || 'Sin teléfono'}</dd></div>
@@ -340,7 +340,7 @@ function AdminUsersPage({ currentPath = '/admin/usuarios' }) {
           )}
         </article>
 
-        <aside className="admin-card admin-inquiry-detail-card" aria-labelledby="admin-user-detail-title">
+        <aside className="admin-card admin-inquiry-detail-card admin-user-detail-card" aria-labelledby="admin-user-detail-title">
           <div className="admin-section-heading">
             <p className="eyebrow">Acción</p>
             <h2 id="admin-user-detail-title">Ver detalle</h2>

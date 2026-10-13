@@ -4904,7 +4904,15 @@ h1 {
 
 .admin-inquiry-detail {
   display: grid;
+  min-width: 0;
   gap: 18px;
+}
+
+.admin-user-detail,
+.admin-user-detail__header,
+.admin-user-detail__grid,
+.admin-user-detail__grid > div {
+  min-width: 0;
 }
 
 .admin-detail-header-actions {
@@ -4964,6 +4972,7 @@ h1 {
   margin: 0;
   color: var(--color-muted);
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .admin-inquiry-detail__grid {
@@ -4996,6 +5005,12 @@ h1 {
   color: var(--color-ink-soft);
   font-weight: 750;
   overflow-wrap: anywhere;
+}
+
+.admin-user-detail__grid select {
+  display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .admin-inquiry-message {
@@ -5045,6 +5060,30 @@ h1 {
 
   .admin-inquiry-detail__grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .admin-user-detail-card {
+    padding: 18px 14px;
+  }
+
+  .admin-user-detail__header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .admin-user-detail__header h3 {
+    font-size: 1.15rem;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-user-detail__header p:not(.eyebrow) {
+    font-size: 0.9rem;
+  }
+
+  .admin-user-detail__grid > div {
+    padding: 12px;
   }
 }
 

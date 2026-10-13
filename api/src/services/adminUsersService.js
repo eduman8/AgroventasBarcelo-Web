@@ -153,11 +153,15 @@ WHERE ID_WebUsuario = @id;
 `;
 
 const updateUserRoleQuery = `
+SET NOCOUNT ON;
 UPDATE dbo.WebUsuarios
 SET
     Rol = @rol,
     FechaActualizacion = GETDATE()
-OUTPUT${userFieldsSelect.replaceAll('    ', '    INSERTED.')}
+WHERE ID_WebUsuario = @id;
+
+SELECT${userFieldsSelect}
+FROM dbo.WebUsuarios
 WHERE ID_WebUsuario = @id;
 `;
 
@@ -360,7 +364,11 @@ export const updateAdminUserRole = async (id, role) => {
     .input('id', sql.Int, userId)
     .input('rol', sql.NVarChar(50), nextRole)
     .query(updateUserRoleQuery);
-  const user = result.recordset?.[0];
+  const user = result.recordsets?.at(-1)?.[0] ?? result.recordset?.[0];
+
+  if (user && user.rol !== nextRole) {
+    throw new Error('El rol del usuario no coincide con el valor solicitado después de actualizar SQL Server.');
+  }
 
   return user ? mapUser(user) : null;
 };
