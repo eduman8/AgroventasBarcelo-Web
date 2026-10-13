@@ -86,8 +86,7 @@ function MachinesPage() {
         <p className="eyebrow">Catálogo AgroBarceló</p>
         <h1 id="machines-title">Maquinarias</h1>
         <p>
-          Explorá maquinaria nueva, usada y trabajos realizados por AgroBarceló, con una
-          estructura lista para sumar fotos y publicaciones reales.
+          Explorá maquinaria nueva, usada y trabajos realizados por nosotros. Encontrá la que mejor se adapte a tus necesidades y descubrí cómo podemos ayudarte a potenciar tu producción agrícola.
         </p>
       </div>
 

@@ -516,7 +516,7 @@ function ContactPage() {
       <div className="contact-hero">
         <p className="eyebrow">Atención AgroBarceló</p>
         <h1 id="contact-title">Contacto</h1>
-        <p>Comunicate con AgroBarceló para consultas sobre maquinarias, repuestos o servicios.</p>
+        <p>Comunicate con nosotros para consultas sobre maquinarias, repuestos o servicios.</p>
       </div>
 
       <div className="contact-layout">

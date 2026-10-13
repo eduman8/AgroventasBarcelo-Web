@@ -30,7 +30,17 @@ function Footer() {
             <span className="footer-contact__location">{settings.ubicacion}</span>
           </address>
         </div>
-        <div className="site-footer__bottom"><p>© 2025 AgroBarceló. Todos los derechos reservados.</p></div>
+        <div className="site-footer__bottom"><p>© AgroVentas Barceló. Todos los derechos reservados.
+          <p className="footer-credit">
+            Diseñado y desarrollado por{" "}
+            <a
+              href="https://eduardo-gomez-portfolio.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Eduardo Gómez
+            </a>
+          </p></p></div>
       </div>
     </footer>
   );

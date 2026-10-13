@@ -67,10 +67,7 @@ function ServicesPage() {
       <div className="services-hero">
         <p className="eyebrow">Soluciones AgroBarceló</p>
         <h1 id="services-title">Servicios para acompañar el trabajo del campo</h1>
-        <p>
-          AgroBarceló combina venta de maquinaria, repuestos, asistencia técnica y mecanizado para
-          brindar soluciones concretas al sector agropecuario.
-        </p>
+        <p>Combinamos venta de maquinaria, repuestos, asistencia técnica y mecanizado para brindar soluciones concretas al sector agropecuario.</p>
       </div>
 
       <div className="services-grid">
